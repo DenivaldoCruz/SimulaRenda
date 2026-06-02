@@ -1,22 +1,23 @@
 # SimulaRenda
 
-SimulaRenda é uma aplicação web de planejamento de independência financeira para o mercado brasileiro. O projeto combina uma interface React com uma API FastAPI para calcular metas de patrimônio, aportes necessários e fases de renda, com atenção especial ao gap previdenciário entre a parada de trabalho e o início dos benefícios previdenciários.
+SimulaRenda é uma aplicação web de planejamento de independência financeira para o mercado brasileiro. O projeto combina uma interface Python com NiceGUI e uma API FastAPI para calcular metas de patrimônio, aportes necessários e fases de renda, com atenção especial ao gap previdenciário entre a parada de trabalho e o início dos benefícios previdenciários.
 
 ## Estrutura do monorepo
 
 ```text
 .
 ├── backend/   # FastAPI + Python 3.12
-├── frontend/  # React 18 + TypeScript + Vite
-├── shared/    # Tipos TypeScript compartilhados
+├── frontend/  # NiceGUI + Python 3.12
+├── shared/    # Documentação de contratos compartilhados
 └── docker-compose.yml
 ```
 
 ## Requisitos
 
 - Docker e Docker Compose
-- Node.js 24+ e npm
 - Python 3.12+
+
+Não é necessário Node.js nem npm para desenvolver ou executar o projeto.
 
 ## Setup local
 
@@ -40,16 +41,16 @@ SimulaRenda é uma aplicação web de planejamento de independência financeira 
    make dev
    ```
 
-A aplicação frontend ficará disponível em `http://localhost:5173` e a API em `http://localhost:8000`.
+A interface NiceGUI ficará disponível em `http://localhost:5173` e a API em `http://localhost:8000`.
 
 ## Comandos úteis
 
 ```bash
-make install  # instala dependências do frontend e backend
+make install  # instala dependências Python do frontend e backend
 make dev      # sobe postgres, redis, backend e frontend com Docker Compose
-make test     # executa testes do frontend e backend
-make lint     # executa verificações estáticas iniciais
-make build    # gera build do frontend e imagens Docker
+make test     # executa testes Python do frontend e backend
+make lint     # compila módulos Python para validação estática inicial
+make build    # gera imagens Docker
 make migrate  # executa migrações Alembic
 ```
 
@@ -60,4 +61,4 @@ O `docker-compose.yml` define os serviços de desenvolvimento:
 - `postgres`: PostgreSQL 16
 - `redis`: Redis 7
 - `backend`: API FastAPI em `:8000`
-- `frontend`: Vite dev server em `:5173`
+- `frontend`: interface NiceGUI em `:5173`

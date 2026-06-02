@@ -1,8 +1,8 @@
 # CONTEXT.md — SimulaRenda
 > Leia este arquivo inteiro antes de qualquer tarefa. Ele é a fonte de verdade sobre o projeto.
 
-**Versão do contexto:** 1.0 · **Atualizado em:** 01/06/2026  
-**Stack principal:** FastAPI (Python 3.12) + React 18 (TypeScript) + PostgreSQL 16 + Redis 7
+**Versão do contexto:** 1.1 · **Atualizado em:** 02/06/2026
+**Stack principal:** FastAPI (Python 3.12) + NiceGUI (Python 3.12) + PostgreSQL 16 + Redis 7
 
 ---
 
@@ -28,21 +28,13 @@ O período entre `retirement_age` e o início do primeiro benefício previdenci�
 
 ```
 simularenda/                        ← raiz do monorepo
-├── frontend/                       ← React 18 + TypeScript + Vite
-│   ├── src/
-│   │   ├── components/ui/          ← componentes primitivos reutilizáveis
-│   │   ├── features/
-│   │   │   ├── simulation/         ← formulário, resultados, gráficos
-│   │   │   │   ├── components/
-│   │   │   │   ├── hooks/
-│   │   │   │   └── services/
-│   │   │   └── simulations/        ← lista, comparação, histórico
-│   │   ├── pages/                  ← HomePage, SimulationsPage, etc.
-│   │   ├── stores/                 ← Zustand: useAuthStore, useSimulationStore
-│   │   ├── lib/                    ← api.ts (axios), utils
-│   │   ├── locales/pt-BR/          ← i18n strings
-│   │   └── workers/                ← calculator.worker.ts (Web Worker)
-│   └── e2e/                        ← testes Playwright
+├── frontend/                       ← NiceGUI + Python 3.12
+│   ├── app/                        ← aplicação NiceGUI, formatação e cliente HTTP
+│   │   ├── main.py                 ← tela principal e chamada à API de cálculo
+│   │   └── formatting.py           ← helpers de moeda e taxas pt-BR
+│   ├── tests/                      ← testes pytest do frontend
+│   ├── pyproject.toml              ← dependências Python do frontend
+│   └── Dockerfile                  ← serviço NiceGUI em :5173
 ├── backend/
 │   └── app/
 │       ├── api/v1/routes/          ← auth.py, simulations.py, users.py
@@ -54,7 +46,7 @@ simularenda/                        ← raiz do monorepo
 │       │   ├── calculator.py       ← ENGINE DE CÁLCULO (arquivo mais crítico)
 │       │   └── auth_service.py
 │       └── tests/
-├── shared/                         ← tipos TypeScript compartilhados
+├── shared/                         ← documentação de contratos compartilhados
 ├── docker-compose.yml              ← dev
 ├── docker-compose.prod.yml         ← produção
 └── Makefile
@@ -85,24 +77,12 @@ simularenda/                        ← raiz do monorepo
 ### Frontend
 | Dependência | Versão | Uso |
 |-------------|--------|-----|
-| React | 18 | UI |
-| TypeScript | 5.x | tipagem |
-| Vite | 5.x | bundler |
-| Tailwind CSS | v4 | estilos (via @tailwindcss/vite) |
-| Zustand | latest | estado global |
-| react-hook-form | latest | formulários |
-| zod | latest | validação de schemas |
-| @hookform/resolvers | latest | bridge zod ↔ react-hook-form |
-| axios | latest | HTTP client |
-| react-router-dom | v6 | roteamento |
-| recharts | latest | gráficos |
-| lucide-react | latest | ícones |
-| @react-pdf/renderer | latest | geração de PDF no browser |
-| i18next + react-i18next | latest | i18n (pt-BR apenas no MVP) |
-| comlink | latest | comunicação tipada com Web Worker |
-| Vitest + Testing Library | latest | testes unitários |
-| Playwright | latest | testes E2E |
-| msw | latest | mock de API em testes |
+| Python | 3.12 | runtime do frontend |
+| NiceGUI | latest stable | UI web declarativa em Python |
+| httpx | latest | HTTP client assíncrono para chamar a API FastAPI |
+| pytest | latest | testes unitários do frontend |
+
+**Importante:** o projeto não usa mais Node.js, npm, React, Vite ou pacotes TypeScript no frontend.
 
 ### Infra
 | Serviço | Versão | Uso |
@@ -137,6 +117,7 @@ GOOGLE_CLIENT_SECRET=
 
 # CORS (lista separada por vírgula)
 CORS_ORIGINS=http://localhost:5173,https://simularenda.com.br
+BACKEND_API_URL=http://localhost:8000/api/v1      # usado pelo frontend NiceGUI
 
 # Sentry (opcional em dev)
 SENTRY_DSN=
@@ -366,84 +347,39 @@ Códigos: 400 (bad request), 401 (não autenticado), 403 (sem permissão), 404 (
 
 ---
 
-## 8. FRONTEND — ESTADO GLOBAL E FLUXO DE DADOS
+## 8. FRONTEND — NICEGUI E FLUXO DE DADOS
 
-### Stores Zustand
+### Serviço NiceGUI
 
-**`useAuthStore`**
-```typescript
-interface AuthStore {
-  user: User | null
-  accessToken: string | null
-  isAuthenticated: boolean
-  setAuth: (user: User, accessToken: string) => void
-  clearAuth: () => void
-}
+- Arquivo principal: `frontend/app/main.py`
+- Porta dev: `http://localhost:5173`
+- O frontend chama a API FastAPI usando `BACKEND_API_URL` (padrão local: `http://localhost:8000/api/v1`; Docker: `http://backend:8000/api/v1`).
+- Não há build npm: desenvolvimento, testes e Docker usam apenas Python.
+
+### Fluxo de cálculo (NiceGUI → API)
+
+```
+1. Usuário preenche o formulário NiceGUI na página `/`
+2. O handler do botão monta `SimulationParameters` com strings decimais para valores financeiros e taxas
+3. Frontend faz POST `${BACKEND_API_URL}/simulations/calculate` com `httpx.AsyncClient`
+4. API valida com Pydantic → chama calculator.run_full_simulation()
+5. NiceGUI renderiza cards, tabela de fases e gráfico de patrimônio
+6. Erros HTTP/validação aparecem em banner acessível na própria tela
 ```
 
-**`useSimulationStore`**
-```typescript
-interface SimulationStore {
-  parameters: Partial<SimulationParameters>
-  results: SimulationResults | null
-  isDirty: boolean           // parâmetros mudaram desde o último save
-  isCalculating: boolean
-  setParameters: (params: Partial<SimulationParameters>) => void
-  setResults: (results: SimulationResults) => void
-  resetForm: () => void
-}
-```
+### Persistência e autenticação
 
-### Configuração do Axios (`src/lib/api.ts`)
-- **Request interceptor:** adiciona `Authorization: Bearer {accessToken}` se autenticado
-- **Response interceptor:** se 401 → tenta `POST /auth/refresh` uma vez → se falhar, chama `clearAuth()` e redireciona para `/entrar`
-
-### Hook `useSimulationCalculator`
-- Debounce de **300ms** entre mudanças no formulário e chamada à API
-- Usa `AbortController` para cancelar requisição pendente se nova chegar no debounce
-- Em caso de 422: traduz erros Pydantic para mensagens amigáveis em pt-BR
-- Exports: `calculate(params)` assíncrono via API; `calculateSync(params)` síncrono via Web Worker
-
-### Rotas do React Router
-```
-/                         → HomePage (formulário + resultados)
-/minhas-simulacoes        → SimulationsPage [requer auth]
-/simulacao/:id            → SimulationDetailPage [requer auth]
-/compartilhado/:token     → SharedSimulationPage [público]
-/entrar                   → LoginPage
-/cadastrar                → RegisterPage
-/esqueci-senha            → ForgotPasswordPage
-/redefinir-senha          → ResetPasswordPage [?token=X]
-/perfil                   → UserProfilePage [requer auth]
-```
-
-### Persistência offline
-- Usuários não autenticados podem salvar até **5 simulações** no `localStorage`
-- Chave: `simularenda:simulations`
-- Ao fazer login/cadastro: migrações automáticas para o servidor; `localStorage` limpo após sucesso
-- Ao atingir 5 simulações: modal bloqueante para criar conta ou excluir uma simulação
-
----
+O MVP NiceGUI atual prioriza a simulação sem login. Fluxos autenticados, armazenamento offline e migração de simulações devem ser reimplementados em Python/NiceGUI antes de serem considerados disponíveis.
 
 ## 9. COMPONENTES UI — GUIA RÁPIDO
 
-| Componente | Arquivo | Uso |
-|------------|---------|-----|
-| `CurrencyInput` | `components/ui/CurrencyInput` | Campos monetários (máscara R$ pt-BR, input da direita para esquerda) |
-| `SliderInput` | `components/ui/SliderInput` | Campos de idade e inteiros com slider + input sincronizados |
-| `PercentageInput` | `components/ui/PercentageInput` | Taxas (exibe %, armazena decimal: 0.045 = 4,5%) |
-| `TooltipInfo` | `components/ui/TooltipInfo` | Ícone `?` com tooltip; em mobile vira bottom-sheet |
-| `ResultCard` | `features/simulation/components/ResultCard` | Card de métrica com loading skeleton e trend |
-| `PensionTimeline` | `features/simulation/components/PensionTimeline` | Timeline horizontal de eventos previdenciários |
-| `PatrimonyChart` | `features/simulation/components/charts/PatrimonyChart` | Gráfico de área + linha (Recharts) |
-| `IncomeCompositionChart` | `features/simulation/components/charts/IncomeCompositionChart` | Barras empilhadas por fase (Recharts) |
+A UI é construída com componentes NiceGUI (`ui.number`, `ui.checkbox`, `ui.select`, `ui.table`, `ui.echart`, `ui.banner`, `ui.card`).
 
 **Regras de estilo:**
-- Cores via variáveis CSS (`--color-primary`, `--color-success`, etc.) — nunca hardcode hex
-- Classes Tailwind apenas de utilitários base (sem plugins, sem classes customizadas com `@apply` exceto casos justificados)
-- Todos os componentes com `aria-*` corretos — ver seção de Acessibilidade
-
----
+- Preferir classes utilitárias suportadas pelo NiceGUI/Quasar para layout e espaçamento.
+- Textos visíveis no MVP ficam em pt-BR diretamente no frontend Python até a futura camada i18n server-side.
+- Campos obrigatórios devem usar labels explícitos e `aria-required=true`.
+- Tabelas e gráficos devem conter labels/captions suficientes para explicar o gap previdenciário.
 
 ## 10. TESTES — ESTRATÉGIA E COBERTURA
 
@@ -462,26 +398,23 @@ interface SimulationStore {
 - `simulation_factory(user, **overrides)` — cria Simulation com parâmetros padrão sobrescrevíveis
 - `authenticated_client(user)` — `async_client` com Authorization header
 
-### Frontend (Vitest + Testing Library)
+### Frontend (pytest)
 | Módulo | Cobertura mínima |
 |--------|-----------------|
-| `services/calculator` (sync) | 100% |
-| `components/ui/*` | 70% |
-| `features/simulation/*` | 70% |
-| `stores/*` | 80% |
+| `app/formatting.py` | 80% |
+| `app/main.py` helpers não-UI | 70% |
 
-**Padrão de mocks:**
-- API: usar `msw` (Mock Service Worker) — nunca mockar `axios` diretamente
-- `localStorage`: usar `jest-localstorage-mock` ou implementação in-memory
-- Web Worker: exportar `calculateSync` como função pura para testes sem worker
+**Padrão de testes:**
+- Testar helpers Python com `pytest`.
+- Para chamadas à API, preferir testes com `httpx.MockTransport` ou fixtures assíncronas; não há axios/msw.
+- Validar que taxas exibidas em percentual são enviadas à API como decimal (`4.5` → `0.045`).
 
-### E2E (Playwright)
-Cenários obrigatórios antes de qualquer deploy em produção:
-1. Fluxo completo sem login (simulação → salvar no localStorage)
-2. Cadastro + migração de simulação local para conta
-3. Compartilhamento de link público em aba anônima
-4. Comparação de 3 simulações
-5. Fluxo completo em viewport mobile (390×844)
+### E2E / smoke browser
+Cenários obrigatórios antes de deploy em produção quando houver suíte browser configurada para NiceGUI:
+1. Fluxo completo sem login (preencher formulário → calcular → visualizar fases)
+2. Tratamento de erro de validação da API
+3. Gráfico e tabela de fases renderizados após cálculo
+4. Fluxo completo em viewport mobile (390×844)
 
 ---
 
@@ -504,57 +437,42 @@ Cenários obrigatórios antes de qualquer deploy em produção:
 
 | Métrica | Meta |
 |---------|------|
-| Cálculo no frontend (sync) | < 100ms |
 | API `POST /simulations/calculate` | < 300ms P95 |
-| Bundle principal (gzipped, sem lazy chunks) | < 150KB |
+| Renderização pós-cálculo no NiceGUI | < 500ms após resposta da API |
 | Lighthouse Performance | ≥ 90 |
 | Lighthouse Acessibilidade | ≥ 90 |
 
 **Estratégias obrigatórias:**
-- Projeções de longo prazo (50+ anos × 12 meses) rodadas em **Web Worker** (`calculator.worker.ts`) para não bloquear a UI
-- `recharts` carregado com `React.lazy` — não está no bundle principal
-- `SimulationsPage`, `SimulationDetailPage`, `SharedSimulationPage` com code splitting
-- `ResultsSummary` e `PatrimonyChart` envoltos em `React.memo`
-- `Intl.NumberFormat` instanciado uma vez via `useMemo`, não por render
-
----
+- Manter cálculo financeiro centralizado no backend; frontend NiceGUI não deve duplicar a engine.
+- Reutilizar helpers de formatação e evitar recriar estruturas grandes desnecessariamente em handlers.
+- Gráficos devem renderizar apenas a série anual retornada pela API, não iterações mês a mês extras.
+- Chamadas HTTP do frontend devem usar timeout explícito.
 
 ## 13. ACESSIBILIDADE — REGRAS OBRIGATÓRIAS
 
 - WCAG 2.1 nível AA em todos os componentes
-- Todos os `<input>` com `<label htmlFor>` explícita
+- Todos os campos de entrada NiceGUI devem ter label visível
 - `aria-required="true"` em campos obrigatórios
-- Erros de validação com `role="alert"` e `aria-live="polite"`
-- `SliderInput`: `aria-valuemin`, `aria-valuemax`, `aria-valuenow`, `aria-label`
-- Modais com focus trap (Tab não sai do modal), `aria-modal="true"`, foco retorna ao disparador ao fechar
-- `PatrimonyChart`: `role="img"` + `aria-label` + tabela de dados alternativa com `className="sr-only"` + `tabIndex={0}`
-- Toasts: `role="status"` para success/info, `role="alert"` para error/warning
-- `PensionTimeline`: implementar como `<ol>` semântica
+- Erros de validação devem aparecer em banner perceptível e com semântica de alerta quando possível
+- Gráficos devem ter `aria-label` descrevendo a série exibida
+- Tabelas de fases devem expor colunas claras para período, retirada, renda e fontes
 - Outline de foco nunca removido sem substituto visual equivalente
-- Executar `jest-axe` em todos os componentes — nenhum violation pode ser merged
-
----
+- Fluxos mobile devem ser validados em viewport estreita antes de deploy
 
 ## 14. INTERNACIONALIZAÇÃO
 
 - Idioma único no MVP: **pt-BR**
-- Todas as strings visíveis passam por `t('namespace.key')` do i18next — nunca texto hardcoded em JSX
-- Formatação monetária: `Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })`
-- Formatação de datas: `date-fns` com locale `pt-BR`
-- CI executa script `check-i18n.ts` que falha se detectar string hardcoded em JSX
-
----
+- Textos visíveis do frontend NiceGUI ficam em pt-BR; se um segundo idioma for adicionado, criar camada i18n Python antes de novas strings
+- Formatação monetária: helpers Python devem exibir `R$`, separador de milhar `.` e centavos com `,`
+- Taxas exibidas ao usuário são percentuais, mas enviadas à API como decimal
 
 ## 15. CONVENÇÕES DE CÓDIGO
 
 ### Nomenclatura
 | Tipo | Convenção | Exemplo |
 |------|-----------|---------|
-| Componentes React | PascalCase | `ResultCard`, `PensionTimeline` |
-| Hooks | camelCase com prefixo `use` | `useSimulationCalculator` |
-| Stores Zustand | camelCase com prefixo `use` | `useAuthStore` |
-| Funções de serviço | camelCase | `generateSimulationPDF` |
-| Constantes | SCREAMING_SNAKE_CASE | `MAX_LOCAL_SIMULATIONS = 5` |
+| Funções Python | snake_case | `format_brl`, `to_decimal_string` |
+| Constantes | SCREAMING_SNAKE_CASE | `BACKEND_API_URL` |
 | Arquivos Python | snake_case | `auth_service.py` |
 | Modelos SQLAlchemy | PascalCase | `User`, `Simulation` |
 | Schemas Pydantic | PascalCase com sufixo | `SimulationCreate`, `TokenResponse` |
@@ -571,58 +489,30 @@ Cenários obrigatórios antes de qualquer deploy em produção:
 - `Decimal` para todo valor financeiro — proibido `float` na calculator
 - Imports absolutos (nunca relativos implícitos)
 
-### TypeScript
-- `strict: true` no tsconfig — sem `any` não justificado
-- Interfaces para contratos de API; `type` para unions e utilitários
-- Componentes React com tipagem explícita de props (nunca `React.FC`)
+### Frontend Python / NiceGUI
+- Type hints em helpers públicos do frontend
+- Não adicionar dependências npm; o frontend deve permanecer 100% Python
+- Manter conversões monetárias e taxas em strings decimais antes de enviar para a API
+- Componentes NiceGUI devem reforçar visualmente o gap previdenciário
 
 ---
 
 ## 16. FLUXOS CRÍTICOS — PASSO A PASSO
 
-### Fluxo de Cálculo (frontend → API → store)
+### Fluxo de Cálculo (frontend NiceGUI → API)
 ```
-1. Usuário altera campo no formulário
-2. react-hook-form chama onChange
-3. useSimulationCalculator recebe novo params (debounce 300ms)
-4. AbortController cancela requisição anterior se ainda pendente
-5. isCalculating = true → componentes de resultado mostram skeleton
-6. POST /api/v1/simulations/calculate com SimulationParameters
-7. API valida com Pydantic → chama calculator.run_full_simulation()
-8. Retorna SimulationResults
-9. useSimulationStore.setResults(results)
-10. isCalculating = false → UI renderiza novos valores
+1. Usuário altera campos no formulário NiceGUI
+2. Usuário clica "Calcular independência financeira"
+3. Handler monta payload no contrato `SimulationParameters`
+4. POST /api/v1/simulations/calculate com strings decimais para dinheiro/taxas
+5. API valida com Pydantic → chama calculator.run_full_simulation()
+6. Retorna SimulationResults
+7. NiceGUI renderiza cards, tabela de fases e gráfico
 ```
 
-### Fluxo de Salvar Simulação (usuário autenticado)
-```
-1. Usuário clica "Salvar Simulação"
-2. Se nome não definido → abre SimulationNameModal
-3. POST /api/v1/simulations com { name, parameters }
-4. Backend recalcula results (nunca confiar no frontend para persistir results)
-5. Retorna SimulationResponse com id
-6. isDirty = false
-7. Toast "Simulação salva com sucesso"
-8. URL atualiza para /simulacao/:id (history.pushState, sem reload)
-```
+### Fluxos de persistência e autenticação no NiceGUI
 
-### Fluxo de Salvar Simulação (usuário não autenticado)
-```
-1. Usuário clica "Salvar Simulação"
-2. offlineSimulationsService.count() < 5 → salva em localStorage
-3. Toast "Simulação salva localmente. Crie uma conta para não perdê-la."
-4. Se count() >= 5 → modal bloqueante pedindo cadastro ou exclusão
-```
-
-### Fluxo de Migração de Simulações Locais
-```
-1. Usuário faz login ou cadastro
-2. useAuthStore.setAuth() chamado
-3. offlineSimulationsService.list() retorna simulações locais
-4. Para cada simulação: POST /api/v1/simulations (em paralelo, máx 3 concurrent)
-5. Após todas: offlineSimulationsService.clear()
-6. Toast "X simulações migradas para sua conta"
-```
+Os endpoints de autenticação e persistência seguem disponíveis na API, mas a implementação NiceGUI atual entrega apenas o cálculo sem login. Antes de reativar salvar/listar/compartilhar no frontend, implementar esses fluxos em Python/NiceGUI respeitando os contratos da seção 7.
 
 ---
 
@@ -633,12 +523,11 @@ Cenários obrigatórios antes de qualquer deploy em produção:
 - ❌ Recalcular na rota GET — resultados são sempre salvos como snapshot no `results` JSONB
 - ❌ Retornar `required_monthly_contribution` negativo (clamp em 0)
 - ❌ Logar dados financeiros do usuário
-- ❌ Hardcodar textos em JSX (usar `t()` do i18next)
-- ❌ Usar `localStorage` ou `sessionStorage` fora do `offlineSimulationsService`
-- ❌ Chamar a engine de cálculo diretamente na thread principal para projeções longas (usar Web Worker)
-- ❌ Mockar `axios` diretamente em testes (usar `msw`)
+- ❌ Adicionar JSX/React/Vite ou dependências npm ao frontend
+- ❌ Chamar a engine de cálculo diretamente no frontend; a UI NiceGUI deve usar a API FastAPI
+- ❌ Reintroduzir axios/msw; testes do frontend devem usar ferramentas Python
 - ❌ Fazer deploy em produção sem os smoke tests passando
-- ❌ Adicionar dependência npm pesada sem justificar no PR e medir impacto no bundle
+- ❌ Adicionar dependência npm; o projeto não deve depender de Node.js/npm
 
 ---
 
@@ -647,12 +536,10 @@ Cenários obrigatórios antes de qualquer deploy em produção:
 | Decisão | Justificativa |
 |---------|--------------|
 | `results` persiste como snapshot JSONB | Se a engine de cálculo mudar, simulações históricas preservam os resultados originais. Não recalcular on-the-fly. |
-| Cálculo síncrono no frontend (`calculateSync`) | Feedback em tempo real sem latência de rede. A API é usada para persistência, não para cálculo principal. |
-| Web Worker para projeções longas | Projeção de 70 anos × 12 meses ≈ 840 iterações com objetos Decimal. Evita jank na UI. |
+| Cálculo centralizado na API | A engine crítica permanece no backend FastAPI e o frontend NiceGUI envia payloads validados para `/simulations/calculate`. |
+| NiceGUI no frontend | Remove a dependência de Node.js/npm e mantém a aplicação full Python no MVP. |
 | Soft delete em `users` | LGPD exige carência de 30 dias antes da exclusão definitiva. |
 | `share_token` no modelo `Simulation` | Compartilhamento granular por simulação, não por usuário. Revogável individualmente. |
-| Offline-first com localStorage | Reduz atrito para novos usuários. Cria incentivo para cadastro quando limite é atingido. |
-| i18n no MVP mesmo sem segundo idioma | Disciplina de não hardcodar strings. Facilita futura expansão sem refatoração massiva. |
 | `Decimal` com precisão 6 em taxas | Taxas como 4.5% a.a. precisam de precisão para composição ao longo de décadas sem erro acumulado. |
 
 ---

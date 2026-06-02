@@ -6,6 +6,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class PublicPension(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     enabled: bool = False
     monthly_amount: Decimal = Decimal("0.00")
     start_age: int | None = None
@@ -13,6 +15,8 @@ class PublicPension(BaseModel):
 
 
 class PrivatePension(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     enabled: bool = False
     monthly_amount: Decimal = Decimal("0.00")
     start_age: int | None = None
@@ -22,6 +26,8 @@ class PrivatePension(BaseModel):
 
 
 class SimulationParameters(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     current_age: int = Field(gt=0)
     current_patrimony: Decimal = Field(ge=0)
     monthly_contribution: Decimal = Field(ge=0)

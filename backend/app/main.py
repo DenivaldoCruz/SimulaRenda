@@ -40,7 +40,7 @@ app.include_router(users.router, prefix="/api/v1", tags=["users"])
 @app.get("/api/v1/health")
 async def health() -> dict[str, str]:
     """Retorna o status básico da aplicação."""
-    return {"status": "ok", "database": "configured", "redis": "configured", "version": "0.1.0"}
+    return {"status": "healthy"}
 
 
 register_pages()
@@ -48,7 +48,7 @@ register_pages()
 ui.run_with(
     app,
     mount_path="/",
-    storage_secret=settings.SECRET_KEY,
+    storage_secret=settings.nicegui_storage_secret,
     title="SimulaRenda",
     favicon="💰",
     dark=False,

@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_ID: str | None = None
     GOOGLE_CLIENT_SECRET: str | None = None
     CORS_ORIGINS: list[str] | str = Field(default_factory=list)
+    nicegui_host: str = Field(default="0.0.0.0", validation_alias="NICEGUI_HOST")
+    nicegui_port: int = Field(default=8000, validation_alias="NICEGUI_PORT")
+    nicegui_storage_secret: str = Field(default="", validation_alias="NICEGUI_STORAGE_SECRET")
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -22,6 +25,11 @@ class Settings(BaseSettings):
         case_sensitive=True,
         extra="ignore",
     )
+
+    @property
+    def secret_key(self) -> str:
+        """Return the application secret key using the lowercase settings convention."""
+        return self.SECRET_KEY
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
@@ -31,6 +39,12 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value
+
+    @model_validator(mode="after")
+    def set_storage_secret(self) -> "Settings":
+        if not self.nicegui_storage_secret:
+            self.nicegui_storage_secret = self.secret_key
+        return self
 
 
 @lru_cache

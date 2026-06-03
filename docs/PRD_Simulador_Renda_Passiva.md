@@ -1,9 +1,8 @@
-# PRD — Simulador de Renda Passiva com Calculadora de Aposentadoria
+# PRD — SimulaRenda: Simulador de Renda Passiva com Calculadora de Aposentadoria
 
-**Versão:** 1.0  
-**Data:** 01 de junho de 2026  
-**Status:** Draft  
-**Autor:** Produto
+**Versão:** 2.0 · **Data:** 01/06/2026 · **Status:** Draft  
+**Stack:** FastAPI + NiceGUI (Python 3.12) · PostgreSQL 16 · Redis 7  
+**Não há JavaScript, TypeScript, Node.js ou npm neste projeto.**
 
 ---
 
@@ -11,7 +10,11 @@
 
 ### 1.1 Sumário Executivo
 
-O **Simulador de Renda Passiva** é uma aplicação web que permite ao usuário planejar sua independência financeira calculando quanto precisa acumular para viver de renda, considerando múltiplas fontes de receita passiva (rendimentos de investimentos, aposentadoria pública e previdência privada), inflação projetada e horizonte temporal personalizado. O diferencial central é a separação explícita entre **a idade de parar de trabalhar** e **a data de início de cada benefício previdenciário**, refletindo a realidade do planejamento financeiro brasileiro.
+O **SimulaRenda** é uma aplicação web que permite ao usuário planejar sua independência financeira, calculando quanto precisa acumular para viver de renda. Considera múltiplas fontes de receita passiva (rendimentos de investimentos, aposentadoria pública e previdência privada), inflação projetada e horizonte temporal personalizado.
+
+O diferencial central é a separação explícita entre **a idade de parar de trabalhar** e **a data de início de cada benefício previdenciário**, refletindo a realidade do planejamento financeiro brasileiro.
+
+A interface é construída em **Python puro com NiceGUI**, rodando no mesmo processo que o backend FastAPI. Não há build step, não há `node_modules`, não há TypeScript.
 
 ### 1.2 Problema a Resolver
 
@@ -27,538 +30,332 @@ Além disso, simulações feitas manualmente se perdem. O sistema deve persistir
 
 ---
 
-## 2. Personas e Contexto
+## 2. Personas
 
 ### Persona A — "Planejador Antecipado"
-- Homem ou mulher, 30–42 anos, renda mensal R$ 8.000–R$ 25.000.
-- Já investe em renda variável (B3) e/ou previdência privada.
+- 30–42 anos, renda mensal R$ 8.000–R$ 25.000, já investe em B3 e/ou previdência privada.
 - Quer saber **quando** pode parar de trabalhar e **quanto** precisa ter acumulado.
-- Preocupa-se com inflação e com o gap entre parar de trabalhar e receber INSS.
+- Preocupa-se com o gap entre parar de trabalhar e receber INSS.
 
 ### Persona B — "Próximo da Aposentadoria"
 - 50–60 anos, focado em validar se o patrimônio atual é suficiente.
-- Quer inserir o patrimônio já acumulado e ver quantos anos de renda ele cobre.
 - Tem datas precisas para INSS e previdência privada já estimadas.
 
 ### Persona C — "Curioso Iniciante"
-- 22–29 anos, começando a poupar.
-- Não tem previdência privada nem certeza sobre aposentadoria pública.
-- Usa o simulador para descobrir o valor mensal a poupar para atingir a liberdade financeira.
+- 22–29 anos, começando a poupar. Usa o simulador para descobrir o valor mensal a investir.
 
 ---
 
-## 3. Escopo Funcional
+## 3. Arquitetura — Como NiceGUI e FastAPI Coexistem
 
-### 3.1 Módulos Principais
+NiceGUI e FastAPI rodam no **mesmo processo Python**, na mesma porta (8000):
 
-| # | Módulo | Descrição |
-|---|--------|-----------|
-| M1 | Formulário de Simulação | Inputs do usuário para calcular os resultados |
-| M2 | Painel de Resultados | Exibição dos resultados calculados em tempo real |
-| M3 | Gráfico de Projeção | Visualização da evolução patrimonial e de renda ao longo dos anos |
-| M4 | Histórico de Simulações | Listagem e comparação de simulações salvas pelo usuário |
-| M5 | Autenticação de Usuário | Cadastro/login para persistência das simulações |
-| M6 | Compartilhamento | Geração de link ou PDF da simulação |
+```
+http://localhost:8000/
+  ├── /*          → NiceGUI (páginas Python, reatividade via WebSocket)
+  └── /api/v1/*   → FastAPI (REST API JSON — usada externamente e para compartilhamento)
+```
 
----
+Os services da camada de negócio (`calculator.py`, `auth_service.py`, `simulation_service.py`) são chamados **diretamente** pelas páginas NiceGUI, sem overhead de HTTP. A REST API existe para: (a) o endpoint público de simulação compartilhada, (b) integrações futuras, (c) testes automatizados.
 
-## 4. Requisitos Funcionais Detalhados
-
-### 4.1 M1 — Formulário de Simulação
-
-#### 4.1.1 Seção: Situação Atual
-
-| Campo | Tipo | Obrigatório | Validação | Padrão |
-|-------|------|-------------|-----------|--------|
-| Patrimônio atual investido (R$) | Numérico monetário | Não | ≥ 0 | R$ 0 |
-| Aporte mensal atual (R$) | Numérico monetário | Sim | > 0 | — |
-| Idade atual (anos) | Inteiro | Sim | 18–80 | — |
-
-#### 4.1.2 Seção: Metas de Independência
-
-| Campo | Tipo | Obrigatório | Validação | Padrão |
-|-------|------|-------------|-----------|--------|
-| Renda mensal desejada na independência (R$) | Numérico monetário | Sim | > 0 | — |
-| **Idade para parar de trabalhar** | Inteiro | Sim | > idade atual, ≤ 80 | — |
-| Expectativa de vida (anos) | Inteiro | Sim | > idade parar, ≤ 110 | 90 |
-
-> **Regra de negócio:** "Idade para parar de trabalhar" define quando a fase de acumulação termina e a fase de usufruto começa. É independente das datas de início dos benefícios previdenciários.
-
-#### 4.1.3 Seção: Pensão / Aposentadoria Pública (INSS ou Regime Próprio)
-
-| Campo | Tipo | Obrigatório | Validação |
-|-------|------|-------------|-----------|
-| Possui ou espera ter aposentadoria pública? | Toggle Sim/Não | Sim | — |
-| Valor estimado do benefício (R$) | Numérico monetário | Se Sim | > 0 |
-| **Data / Idade de início do recebimento** | Inteiro (idade) ou mês/ano | Se Sim | ≥ idade parar de trabalhar |
-| O valor já está em reais de hoje? | Toggle Sim/Não | Se Sim | — |
-
-> **Regra de negócio crítica:** A idade de início do benefício público pode ser igual ou **posterior** à idade de parar de trabalhar, criando um gap que o patrimônio acumulado precisa cobrir.
-
-#### 4.1.4 Seção: Previdência Privada (PGBL/VGBL ou Fundo de Pensão)
-
-| Campo | Tipo | Obrigatório | Validação |
-|-------|------|-------------|-----------|
-| Possui previdência privada? | Toggle Sim/Não | Sim | — |
-| Valor mensal esperado do benefício (R$) | Numérico monetário | Se Sim | > 0 |
-| **Data / Idade de início do recebimento** | Inteiro (idade) ou mês/ano | Se Sim | ≥ idade parar de trabalhar |
-| Modalidade | Select: Renda vitalícia / Prazo certo / Pagamento único | Se Sim | — |
-| Prazo (anos) | Inteiro | Se prazo certo | > 0 |
-
-> A previdência privada e a pública podem ter idades de início diferentes entre si e diferentes da idade de parar de trabalhar.
-
-#### 4.1.5 Seção: Parâmetros Econômicos
-
-| Campo | Tipo | Padrão | Faixa |
-|-------|------|--------|-------|
-| Inflação anual projetada (%) | Decimal | 4,50% | 0%–20% |
-| Rendimento anual real projetado (%) | Decimal | 6,00% | 0%–30% |
-| Taxa de retirada segura (%) | Decimal | 4,00% | 1%–10% |
-
-> **Nota UX:** Exibir tooltip explicativo para cada parâmetro econômico com benchmark de mercado.
-
-#### 4.1.6 Comportamento do Formulário
-
-- Todos os campos monetários usam máscara de real brasileiro (R$ 1.234,56).
-- Sliders numéricos para campos inteiros (idade, expectativa de vida) com input numérico sincronizado.
-- Recálculo automático (debounce 300ms) a cada alteração de campo.
-- Botão "Salvar Simulação" habilitado somente quando campos obrigatórios estão preenchidos.
-- Botão "Limpar" redefine o formulário para o estado inicial.
+**Atenção em produção:** o Nginx deve ter suporte a WebSocket (`Upgrade` / `Connection: upgrade`) para que a reatividade da UI funcione corretamente.
 
 ---
 
-### 4.2 M2 — Painel de Resultados
+## 4. Módulos Principais
 
-#### 4.2.1 Cards de Resumo (sempre visíveis acima da dobra)
+| # | Módulo | Implementação |
+|---|--------|---------------|
+| M1 | Formulário de Simulação | Página NiceGUI com componentes reativos |
+| M2 | Painel de Resultados | Cards e métricas atualizados em tempo real via binding |
+| M3 | Gráficos de Projeção | Plotly integrado ao NiceGUI (`ui.plotly`) |
+| M4 | Histórico de Simulações | Página NiceGUI com lista e comparação |
+| M5 | Autenticação | `app.storage.user` do NiceGUI + JWT para a REST API |
+| M6 | Compartilhamento | Link público servido pela REST API FastAPI |
+
+---
+
+## 5. Requisitos Funcionais
+
+### 5.1 Formulário de Simulação
+
+#### Seção: Situação Atual
+
+| Campo | Componente NiceGUI | Validação |
+|-------|-------------------|-----------|
+| Patrimônio atual investido (R$) | `ui.number` com prefix "R$" | ≥ 0 |
+| Aporte mensal (R$) | `ui.number` com prefix "R$" | > 0 |
+| Idade atual (anos) | `ui.slider` + `ui.number` sincronizados | 18–80 |
+
+#### Seção: Metas de Independência
+
+| Campo | Componente NiceGUI | Validação |
+|-------|-------------------|-----------|
+| Renda mensal desejada (R$) | `ui.number` com prefix "R$" | > 0 |
+| **Idade para parar de trabalhar** | `ui.slider` + `ui.number` | > idade atual, ≤ 80 |
+| Expectativa de vida | `ui.slider` + `ui.number` | > retirement_age, ≤ 110, default 90 |
+
+> **Regra de negócio:** `retirement_age` é independente de qualquer `start_age` de benefício previdenciário.
+
+#### Seção: Aposentadoria Pública (INSS / RPPS)
+
+| Campo | Componente NiceGUI | Validação |
+|-------|-------------------|-----------|
+| Possui aposentadoria pública? | `ui.switch` | — |
+| Valor do benefício (R$) | `ui.number` (visível se switch ON) | > 0 |
+| **Idade de início do recebimento** | `ui.slider` (visível se switch ON) | ≥ retirement_age |
+| Valor em reais de hoje? | `ui.switch` (default ON) | — |
+
+> **Regra crítica:** `start_age` pode ser posterior a `retirement_age`, criando o gap previdenciário que o patrimônio precisa cobrir.
+
+#### Seção: Previdência Privada (PGBL / VGBL)
+
+| Campo | Componente NiceGUI | Validação |
+|-------|-------------------|-----------|
+| Possui previdência privada? | `ui.switch` | — |
+| Valor mensal do benefício (R$) | `ui.number` (visível se ON) | > 0 |
+| **Idade de início do recebimento** | `ui.slider` (visível se ON) | ≥ retirement_age |
+| Modalidade | `ui.select` (visível se ON) | lifetime \| fixed_term \| lump_sum |
+| Prazo (anos) | `ui.number` (visível se fixed_term) | > 0 |
+| Valor em reais de hoje? | `ui.switch` (default ON) | — |
+
+#### Seção: Parâmetros Econômicos (colapsável)
+
+| Campo | Padrão | Faixa |
+|-------|--------|-------|
+| Inflação anual projetada | 4,50% | 0%–20% |
+| Rendimento anual real | 6,00% | 0%–30% |
+| Taxa de retirada segura | 4,00% | 1%–10% |
+
+#### Comportamento do Formulário
+- Recálculo automático em cada mudança de campo via `ui.refreshable` ou bindings reativos do NiceGUI.
+- Alertas inline de gap previdenciário quando `start_age > retirement_age`.
+- Tooltips explicativos com `ui.tooltip` em cada campo complexo.
+- Parâmetros econômicos em `ui.expansion` (colapsado por padrão).
+
+### 5.2 Painel de Resultados
+
+Cards sempre visíveis com:
 
 | Card | Cálculo |
 |------|---------|
-| **Patrimônio Necessário (R$)** | Renda mensal desejada líquida de pensões / Taxa de retirada segura × 12 |
-| **Aporte Mensal Necessário (R$)** | Valor mensal adicional para atingir o patrimônio necessário até a idade alvo |
-| **Rendimento Anual Esperado (%)** | Campo de entrada, exibido para referência |
-| **Inflação Projetada (%)** | Campo de entrada, exibido para referência |
-| **Valor Projetado do Patrimônio (R$)** | Patrimônio acumulado na data de parar de trabalhar |
-| **Poupança Necessária (R$)** | Diferença entre patrimônio necessário e projetado (se positivo, falta; se negativo, sobra) |
+| **Patrimônio Necessário** | Renda líquida mensal / taxa_retirada × 12 |
+| **Patrimônio Projetado** | FV acumulado até retirement_age |
+| **Aporte Mensal Necessário** | Cálculo reverso do FV |
+| **Gap (diferença)** | Projetado − Necessário (positivo = sobra, negativo = falta) |
+| Rendimento Anual Real | Parâmetro de entrada |
+| Inflação Projetada | Parâmetro de entrada |
 
-#### 4.2.2 Linha do Tempo de Eventos
+Banner de viabilidade:
 
-Exibição visual (timeline horizontal ou vertical) com os marcos:
+| Status | Critério | Cor NiceGUI |
+|--------|----------|-------------|
+| `viable` | Projetado ≥ Necessário | `positive` (verde) |
+| `warning` | Projetado ≥ 80% do Necessário | `warning` (amarelo) |
+| `unviable` | Projetado < 80% do Necessário | `negative` (vermelho) |
+
+### 5.3 Gráficos (Plotly via `ui.plotly`)
+
+**Gráfico 1 — Evolução Patrimonial:**
+- Área preenchida na fase de acumulação (até `retirement_age`)
+- Linha na fase de retirada (após `retirement_age`)
+- Linhas verticais pontilhadas nos eventos: parar de trabalhar, início INSS, início Prev. Privada
+- Linha horizontal pontilhada no patrimônio necessário
+- Tooltip com: idade, patrimônio, fase atual, renda disponível no período
+
+**Gráfico 2 — Composição da Renda por Fase:**
+- Barras empilhadas por fase (Retirada do Patrimônio | INSS | Prev. Privada)
+- Linha de referência na renda desejada
+
+### 5.4 Timeline de Eventos (ui.timeline ou HTML customizado)
 
 ```
-[Hoje] ──── [Parar de trabalhar] ──── [Início INSS] ──── [Início Prev. Privada] ──── [Expectativa de vida]
-  ↑ acumulação ↑                  ↑ gap: só patrimônio ↑    ↑ renda parcial ↑         ↑ renda plena ↑
+[Hoje] ──── [Parar de trabalhar] ──── [Início Prev. Privada] ──── [Início INSS] ──── [Expectativa de vida]
+  acumulação       gap: só patrimônio        renda parcial              renda plena
 ```
 
-- Cada fase exibe a renda mensal líquida disponível no período.
-- O gap (período sem benefício) é destacado em cor de alerta se o patrimônio não cobrir as despesas.
+Alerta destacado quando há gap: "⚠️ X anos sem benefício previdenciário. Patrimônio cobre R$ Y/mês neste período."
 
-#### 4.2.3 Indicadores de Viabilidade
+### 5.5 Histórico de Simulações
 
-| Status | Critério | Visual |
-|--------|----------|--------|
-| ✅ Plano Viável | Patrimônio projetado ≥ Patrimônio necessário | Verde |
-| ⚠️ Plano com Ajuste | 80% ≤ Projetado < Necessário | Amarelo |
-| ❌ Plano Inviável | Projetado < 80% do Necessário | Vermelho |
+- Lista de simulações salvas em cards (`ui.card`) com: nome, data, status, patrimônio necessário/projetado, mini progress bar.
+- Menu de ações por simulação: Renomear | Duplicar | Compartilhar | Excluir.
+- Comparação de até 3 simulações em tabela side-by-side + gráfico Plotly sobreposto.
+- Estado vazio com CTA para criar primeira simulação.
+
+### 5.6 Autenticação
+
+- Sessão gerenciada via `app.storage.user` do NiceGUI (cookie seguro, server-side).
+- Login com email/senha e Google OAuth.
+- JWT gerado para uso na REST API (compartilhamento externo).
+- Persistência offline: até 5 simulações em `app.storage.user` para usuários não autenticados; migração automática ao fazer login.
+
+### 5.7 Compartilhamento
+
+- Link público `/compartilhado/{token}` servido pela REST API FastAPI como página NiceGUI read-only.
+- `share_token` gerado com `secrets.token_urlsafe(32)`.
+- Exportação PDF via `reportlab` gerada server-side e entregue como download.
 
 ---
 
-### 4.3 M3 — Gráfico de Projeção
+## 6. Regras de Negócio e Fórmulas de Cálculo
 
-#### 4.3.1 Gráfico Principal: Evolução Patrimonial
-
-- Tipo: Área (fase acumulação) + Linha (fase retirada)
-- Eixo X: Idade do usuário (da atual até a expectativa de vida)
-- Eixo Y: Patrimônio acumulado (R$, escala linear)
-- Linhas adicionais sobrepostas:
-  - Linha pontilhada: patrimônio necessário (constante ajustado por inflação)
-  - Marcadores verticais: início INSS, início previdência privada, idade para parar de trabalhar
-
-#### 4.3.2 Gráfico Secundário: Composição da Renda Mensal por Fase
-
-- Tipo: Barras empilhadas por faixa etária
-- Segmentos: Retirada do patrimônio | INSS/Regime Próprio | Previdência Privada
-- Linha de meta: renda desejada
-
-#### 4.3.3 Interatividade
-
-- Hover/tooltip em cada ponto mostrando: idade, patrimônio, renda disponível no período.
-- Zoom e pan habilitados.
-- Exportação do gráfico como PNG.
-
----
-
-### 4.4 M4 — Histórico de Simulações
-
-#### 4.4.1 Lista de Simulações
-
-- Exibida em cards ou tabela com:
-  - Nome da simulação (editável pelo usuário)
-  - Data de criação
-  - Patrimônio necessário calculado
-  - Status de viabilidade (ícone colorido)
-  - Ações: Ver detalhes | Duplicar | Excluir
-
-#### 4.4.2 Comparação de Simulações
-
-- Seleção de até 3 simulações para comparação lado a lado.
-- Tabela comparativa com todos os campos principais e resultados.
-- Gráfico sobreposto das projeções das simulações selecionadas.
-
-#### 4.4.3 Persistência
-
-- **Usuário autenticado:** dados armazenados no banco de dados do servidor.
-- **Usuário não autenticado:** dados armazenados em `localStorage` com até 5 simulações; CTA para criar conta para não perder.
-- Cada simulação salva snapshot completo dos parâmetros de entrada e resultados calculados.
-
----
-
-### 4.5 M5 — Autenticação de Usuário
-
-| Funcionalidade | Detalhe |
-|----------------|---------|
-| Cadastro | Email + senha ou Google OAuth |
-| Login | Email + senha, Google OAuth, "Lembrar de mim" |
-| Recuperação de senha | Via email (token com 24h de validade) |
-| Perfil | Nome, email, data de nascimento (pré-preenche campo de idade) |
-| Exclusão de conta | Soft delete com 30 dias de carência |
-
----
-
-### 4.6 M6 — Compartilhamento
-
-- **Link Público:** gera URL com parâmetros codificados (sem login necessário para visualizar).
-- **Exportação PDF:** relatório gerado server-side com: resumo dos inputs, cards de resultados, gráficos e linha do tempo.
-- **Compartilhamento Social:** botões para WhatsApp e Twitter/X com texto pré-formatado.
-
----
-
-## 5. Regras de Negócio e Cálculos
-
-### 5.1 Fase de Acumulação
-
+### Fase de Acumulação
 ```
-FV = PV × (1 + r)^n + PMT × ((1 + r)^n − 1) / r
+FV = PV × (1 + r_mensal)^n + PMT × ((1 + r_mensal)^n − 1) / r_mensal
+r_mensal = annual_real_return / 12
+n = (retirement_age − current_age) × 12
 ```
 
-Onde:
-- `PV` = patrimônio atual
-- `PMT` = aporte mensal (convertido para períodos mensais com `r` mensal)
-- `r` = rendimento anual real / 12
-- `n` = número de meses até parar de trabalhar
-
-### 5.2 Patrimônio Necessário
-
+### Patrimônio Necessário
 ```
-P_necessário = Renda_líquida_mensal × 12 / taxa_retirada_segura
+P_necessário = renda_líquida_mensal × 12 / safe_withdrawal_rate
+renda_líquida_mensal = desired_monthly_income − Σ(benefícios com start_age ≤ retirement_age + 1)
 ```
 
-Onde:
-- `Renda_líquida_mensal` = Renda desejada − benefícios previdenciários ativos no período de referência (idade de parar de trabalhar + 1)
-- Benefícios só entram no cálculo a partir da sua respectiva data de início
-
-### 5.3 Modelo de Retirada com Eventos Previdenciários
-
-O sistema simula mês a mês:
-
-1. **Fase 1** — Da idade de parar de trabalhar até o início do 1º benefício:
-   - Retirada mensal = Renda desejada (totalmente do patrimônio)
-
-2. **Fase 2** — Do início do 1º benefício até o início do 2º (se houver):
-   - Retirada mensal = Renda desejada − Benefício 1
-
-3. **Fase 3** — Do início do 2º benefício até a expectativa de vida:
-   - Retirada mensal = Renda desejada − Benefício 1 − Benefício 2
-
-4. O patrimônio em cada mês = Patrimônio anterior × (1 + r_mensal) − Retirada
-
-5. Alerta de **risco de esgotamento** se patrimônio < 0 em qualquer mês projetado.
-
-### 5.4 Correção pela Inflação
-
-- Todos os valores inseridos pelo usuário são assumidos como **reais de hoje**.
-- A projeção corrige a renda desejada pela inflação acumulada a cada ano.
-- Os rendimentos do patrimônio usam **taxa real** (nominal − inflação).
-- Benefícios previdenciários: usuário informa se o valor já está em reais de hoje ou valor nominal futuro.
-
-### 5.5 Aporte Necessário (cálculo reverso)
-
-Se o usuário não saber quanto poupar, o sistema calcula o `PMT` necessário:
-
+### Aporte Necessário (reverso)
 ```
 PMT = (P_necessário − PV × (1 + r)^n) × r / ((1 + r)^n − 1)
+Se PV × (1 + r)^n ≥ P_necessário → retornar Decimal(0)
 ```
+
+### Simulação Mês a Mês (fase de retirada)
+```
+Para cada mês m após retirement_age:
+  benefícios_ativos = Σ benefícios com start_age ≤ idade_no_mês_m
+  retirada = max(0, desired_monthly_income − benefícios_ativos)
+  patrimônio[m] = max(0, patrimônio[m−1] × (1 + r_mensal) − retirada)
+  se patrimônio[m] == 0: registrar patrimony_exhausted=True, exhaustion_age
+```
+
+### Invariantes (nunca violar)
+- `retirement_age > current_age`
+- `life_expectancy > retirement_age`
+- `public_pension.start_age >= retirement_age` (se habilitada)
+- `private_pension.start_age >= retirement_age` (se habilitada)
+- `required_monthly_contribution >= 0` (nunca negativo)
+- Patrimônio na `projection_series` nunca negativo (clamp em 0)
 
 ---
 
-## 6. Arquitetura Técnica
+## 7. Banco de Dados
 
-### 6.1 Stack Recomendada
-
-| Camada | Tecnologia |
-|--------|------------|
-| Frontend | React 18 + TypeScript + Vite |
-| Estilização | Tailwind CSS + shadcn/ui |
-| Gráficos | Recharts ou Chart.js |
-| Estado Global | Zustand |
-| Backend | FastAPI (Python 3.12) |
-| Banco de Dados | PostgreSQL 16 |
-| ORM | SQLAlchemy 2 + Alembic |
-| Autenticação | JWT (access 15min + refresh 7 dias) + Google OAuth 2.0 |
-| Cache | Redis (simulações e sessões) |
-| Testes | pytest (backend) + Vitest + Testing Library (frontend) |
-| CI/CD | GitHub Actions |
-| Deploy | Docker Compose / Kubernetes |
-
-### 6.2 Modelo de Dados
-
-#### Tabela `users`
+### Tabela `users`
 ```sql
-id            UUID PRIMARY KEY
-email         VARCHAR(255) UNIQUE NOT NULL
-name          VARCHAR(255)
-birth_date    DATE
-created_at    TIMESTAMPTZ DEFAULT now()
-deleted_at    TIMESTAMPTZ  -- soft delete
+id               UUID PRIMARY KEY DEFAULT gen_random_uuid()
+email            VARCHAR(255) UNIQUE NOT NULL
+name             VARCHAR(255)
+hashed_password  VARCHAR(255)   -- NULL para usuários OAuth
+birth_date       DATE
+created_at       TIMESTAMPTZ DEFAULT now()
+deleted_at       TIMESTAMPTZ    -- soft delete, carência 30 dias
 ```
 
-#### Tabela `simulations`
+### Tabela `simulations`
 ```sql
-id              UUID PRIMARY KEY
-user_id         UUID REFERENCES users(id)
-name            VARCHAR(255) NOT NULL DEFAULT 'Simulação sem título'
-created_at      TIMESTAMPTZ DEFAULT now()
-updated_at      TIMESTAMPTZ
-parameters      JSONB NOT NULL  -- snapshot de todos os inputs
-results         JSONB NOT NULL  -- snapshot de todos os outputs calculados
-share_token     VARCHAR(64) UNIQUE  -- token para link público
-is_public       BOOLEAN DEFAULT false
+id           UUID PRIMARY KEY DEFAULT gen_random_uuid()
+user_id      UUID REFERENCES users(id) ON DELETE SET NULL
+name         VARCHAR(255) NOT NULL DEFAULT 'Simulação sem título'
+parameters   JSONB NOT NULL
+results      JSONB NOT NULL   -- snapshot imutável dos resultados
+share_token  VARCHAR(64) UNIQUE
+is_public    BOOLEAN DEFAULT false
+created_at   TIMESTAMPTZ DEFAULT now()
+updated_at   TIMESTAMPTZ
 ```
 
-#### Estrutura do JSONB `parameters`
-```json
-{
-  "current_age": 35,
-  "current_patrimony": 150000,
-  "monthly_contribution": 3000,
-  "desired_monthly_income": 10000,
-  "retirement_age": 55,
-  "life_expectancy": 90,
-  "inflation_rate": 0.045,
-  "annual_real_return": 0.06,
-  "safe_withdrawal_rate": 0.04,
-  "public_pension": {
-    "enabled": true,
-    "monthly_amount": 2500,
-    "start_age": 65,
-    "amount_in_today_reais": true
-  },
-  "private_pension": {
-    "enabled": true,
-    "monthly_amount": 3000,
-    "start_age": 60,
-    "modality": "lifetime",
-    "amount_in_today_reais": true
-  }
-}
-```
-
-#### Estrutura do JSONB `results`
-```json
-{
-  "required_patrimony": 1500000,
-  "projected_patrimony": 1250000,
-  "required_monthly_contribution": 3800,
-  "feasibility_status": "warning",
-  "annual_expected_return": 0.06,
-  "projected_inflation": 0.045,
-  "patrimony_gap": 250000,
-  "phases": [
-    { "from_age": 55, "to_age": 60, "monthly_withdrawal": 10000, "sources": ["patrimony"] },
-    { "from_age": 60, "to_age": 65, "monthly_withdrawal": 7000, "sources": ["patrimony", "private_pension"] },
-    { "from_age": 65, "to_age": 90, "monthly_withdrawal": 4500, "sources": ["patrimony", "private_pension", "public_pension"] }
-  ],
-  "projection_series": [
-    { "age": 35, "patrimony": 150000 },
-    { "age": 36, "patrimony": 198500 }
-  ]
-}
-```
-
-### 6.3 API REST
-
-#### Endpoints de Simulação
-
-| Método | Rota | Autenticação | Descrição |
-|--------|------|--------------|-----------|
-| `POST` | `/api/v1/simulations/calculate` | Opcional | Calcula simulação (não persiste) |
-| `POST` | `/api/v1/simulations` | Obrigatório | Cria e salva simulação |
-| `GET` | `/api/v1/simulations` | Obrigatório | Lista simulações do usuário |
-| `GET` | `/api/v1/simulations/{id}` | Obrigatório | Detalhe de simulação |
-| `PUT` | `/api/v1/simulations/{id}` | Obrigatório | Atualiza nome ou parâmetros |
-| `DELETE` | `/api/v1/simulations/{id}` | Obrigatório | Remove simulação |
-| `POST` | `/api/v1/simulations/{id}/share` | Obrigatório | Gera/revoga token público |
-| `GET` | `/api/v1/simulations/shared/{token}` | Nenhuma | Visualiza simulação pública |
-
-#### Endpoints de Autenticação
-
-| Método | Rota | Descrição |
-|--------|------|-----------|
-| `POST` | `/api/v1/auth/register` | Cadastro com email/senha |
-| `POST` | `/api/v1/auth/login` | Login com email/senha |
-| `POST` | `/api/v1/auth/google` | Login com Google OAuth |
-| `POST` | `/api/v1/auth/refresh` | Renova access token |
-| `POST` | `/api/v1/auth/logout` | Invalida refresh token |
-| `POST` | `/api/v1/auth/forgot-password` | Envia email de redefinição |
-| `POST` | `/api/v1/auth/reset-password` | Redefine senha com token |
+`results` é sempre calculado no servidor no momento do save — nunca confiar em resultados enviados pelo cliente.
 
 ---
 
-## 7. Design e Experiência do Usuário
+## 8. REST API (FastAPI)
 
-### 7.1 Princípios de Design
+Prefixo: `/api/v1`
 
-- **Clareza sobre complexidade:** campos avançados (parâmetros econômicos) colapsados por padrão com valores pré-configurados sensatos.
-- **Feedback em tempo real:** resultados recalculam visualmente enquanto o usuário digita.
-- **Confiança:** tooltips explicativos em cada parâmetro; referências a benchmarks de mercado (ex: "Taxa Selic atual: X%").
-- **Progressive disclosure:** novos campos (pensão pública, previdência privada) só aparecem quando habilitados por toggle.
+| Método | Rota | Auth | Descrição |
+|--------|------|------|-----------|
+| POST | `/auth/register` | — | Cadastro email/senha |
+| POST | `/auth/login` | — | Login → JWT |
+| POST | `/auth/google` | — | Google OAuth |
+| POST | `/auth/refresh` | — | Renova token |
+| POST | `/auth/logout` | JWT | Invalida refresh |
+| POST | `/simulations/calculate` | Opcional | Calcula sem persistir |
+| POST | `/simulations` | JWT | Cria e salva simulação |
+| GET | `/simulations` | JWT | Lista do usuário |
+| GET | `/simulations/{id}` | JWT | Detalhe |
+| PUT | `/simulations/{id}` | JWT | Atualiza nome/parâmetros |
+| DELETE | `/simulations/{id}` | JWT | Remove |
+| POST | `/simulations/{id}/share` | JWT | Liga/desliga compartilhamento |
+| GET | `/simulations/shared/{token}` | — | Visualização pública |
+| GET | `/health` | — | Status dos serviços |
 
-### 7.2 Fluxo Principal de Usuário (Happy Path)
-
-```
-1. Usuário acessa a página
-2. Preenche patrimônio atual, aporte mensal e idade atual
-3. Define renda mensal desejada e idade para parar de trabalhar
-4. Resultados aparecem automaticamente (painel lateral / seção abaixo)
-5. Expande "Aposentadoria Pública" → informa valor e IDADE de início (ex: 65)
-6. Expande "Previdência Privada" → informa valor e IDADE de início (ex: 60)
-7. Gráfico atualiza mostrando fases distintas e timeline de eventos
-8. Usuário clica "Salvar Simulação" → modal de login/cadastro se não autenticado
-9. Simulação salva com nome padrão → usuário renomeia se quiser
-10. Usuário pode acessar "Minhas Simulações" para comparar cenários
-```
-
-### 7.3 Responsividade
-
-- Layout de 2 colunas em desktop (formulário esquerda | resultados direita).
-- Layout de 1 coluna em mobile (formulário → resultados → gráficos).
-- Gráficos com scroll horizontal em viewport < 480px.
-
-### 7.4 Acessibilidade
-
-- WCAG 2.1 AA: contraste mínimo 4.5:1 em todos os textos.
-- Todos os inputs com `<label>` explícita.
-- Gráficos com texto alternativo e tabela de dados colapsável.
-- Navegação completa por teclado.
+Rate limits: login 10 req/min por IP; register 5 req/min; calculate 30 req/min; POST simulations 20 req/hora por user.
 
 ---
 
-## 8. Requisitos Não Funcionais
+## 9. Requisitos Não Funcionais
 
 | Categoria | Requisito |
 |-----------|-----------|
-| Performance | Cálculo de simulação < 100ms no frontend; API response < 300ms no P95 |
+| Performance | Cálculo síncrono < 100ms; API P95 < 300ms |
 | Disponibilidade | 99,5% uptime mensal |
-| Segurança | HTTPS obrigatório; senhas com bcrypt (cost 12); rate limiting nas rotas de auth |
-| Privacidade | Dados financeiros não compartilhados com terceiros; conformidade LGPD |
-| Escalabilidade | Suportar 10.000 simulações/dia sem degradação |
-| SEO | Server-side rendering ou Static Generation para página principal |
-| Internacionalização | Português Brasil (pt-BR) como única língua no MVP |
+| Segurança | HTTPS obrigatório; bcrypt cost=12; rate limiting |
+| Privacidade | LGPD; dados financeiros não logados; não compartilhados com terceiros |
+| WebSocket | Nginx com suporte a Upgrade obrigatório em produção |
+| Idioma | pt-BR exclusivo no MVP |
 
 ---
 
-## 9. Roadmap de Desenvolvimento
+## 10. Roadmap
 
 ### Fase 1 — MVP Core (Semanas 1–4)
-
-| # | Entrega | Critério de Aceite |
-|---|---------|-------------------|
-| 1.1 | Setup do projeto (repo, CI, ambientes) | Pipeline verde com lint + testes |
-| 1.2 | Engine de cálculo (puro TypeScript/Python) | 100% cobertura de testes unitários nos cálculos |
-| 1.3 | Formulário de simulação (sem login) | Todos os campos funcionando com validação |
-| 1.4 | Painel de resultados com cards | Recálculo em tempo real < 300ms |
-| 1.5 | Timeline de eventos previdenciários | Exibe fases corretamente com gaps |
-| 1.6 | Gráfico de projeção patrimonial | Interativo com tooltips |
+- Setup do projeto (monorepo Python puro, Docker, CI)
+- Engine de cálculo com 100% de cobertura de testes
+- UI NiceGUI: formulário completo com reatividade
+- Painel de resultados e timeline
 
 ### Fase 2 — Persistência e Autenticação (Semanas 5–7)
-
-| # | Entrega | Critério de Aceite |
-|---|---------|-------------------|
-| 2.1 | Backend FastAPI + PostgreSQL | Endpoints de cálculo funcionando |
-| 2.2 | Autenticação JWT + Google OAuth | Login/logout/refresh funcionando |
-| 2.3 | CRUD de simulações | Usuário salva, lista, edita e deleta |
-| 2.4 | Persistência offline (localStorage) | Até 5 simulações sem login |
-| 2.5 | Migração localStorage → conta | Simula antes, faz login, dados preservados |
+- Banco de dados, modelos e migrações Alembic
+- Autenticação (email/senha + Google OAuth)
+- CRUD de simulações (NiceGUI + REST API)
+- Persistência offline em `app.storage.user`
 
 ### Fase 3 — Funcionalidades Avançadas (Semanas 8–10)
-
-| # | Entrega | Critério de Aceite |
-|---|---------|-------------------|
-| 3.1 | Comparação de simulações | Side-by-side de até 3 simulações |
-| 3.2 | Gráfico de composição de renda por fase | Barras empilhadas por período |
-| 3.3 | Exportação PDF do relatório | PDF com dados e gráficos |
-| 3.4 | Link público de compartilhamento | Visualização read-only sem login |
-| 3.5 | Cálculo de aporte necessário (reverso) | Campo mostra quanto precisa poupar |
+- Gráficos Plotly integrados
+- Comparação de simulações
+- Exportação PDF com reportlab
+- Compartilhamento público via link
 
 ### Fase 4 — Qualidade e Go-Live (Semanas 11–12)
-
-| # | Entrega | Critério de Aceite |
-|---|---------|-------------------|
-| 4.1 | Testes E2E (Playwright) | Fluxo principal automatizado |
-| 4.2 | Otimização de performance | Lighthouse score ≥ 90 |
-| 4.3 | SEO e meta tags | Google Search Console indexado |
-| 4.4 | Deploy em produção | Monitoramento + alertas configurados |
-| 4.5 | Documentação de usuário | FAQ e tooltips revisados |
-
----
-
-## 10. Métricas de Sucesso (KPIs)
-
-| Métrica | Meta 3 meses | Meta 6 meses |
-|---------|-------------|-------------|
-| Simulações realizadas/mês | 1.000 | 5.000 |
-| Taxa de cadastro após simulação | 15% | 25% |
-| Simulações salvas por usuário | ≥ 2 | ≥ 3 |
-| Bounce rate | < 50% | < 40% |
-| NPS da ferramenta | ≥ 40 | ≥ 50 |
-| Taxa de retorno (usuários com ≥ 2 sessões) | 20% | 35% |
+- Testes E2E com Playwright
+- Otimização de performance
+- Deploy em produção (Docker + Nginx)
+- Monitoramento com Prometheus + Sentry
 
 ---
 
 ## 11. Fora do Escopo (MVP)
 
-- Conexão com APIs de corretoras ou Open Finance para importar patrimônio automaticamente.
-- Cálculo de IR sobre rendimentos e benefícios.
-- Simulação de múltiplos cenários de mercado (Monte Carlo).
-- Aplicativo mobile nativo (iOS/Android).
-- Modo multi-usuário (casais com rendas e planos distintos combinados).
-- Integração com plataformas de previdência privada para cotações reais.
+- Open Finance / APIs de corretoras
+- Cálculo de IR sobre rendimentos
+- Monte Carlo (múltiplos cenários de mercado)
+- Aplicativo mobile nativo
+- Modo casal (dois planejamentos combinados)
 
 ---
 
-## 12. Riscos e Mitigações
-
-| Risco | Probabilidade | Impacto | Mitigação |
-|-------|--------------|---------|-----------|
-| Cálculos financeiros com erros | Média | Alto | Engine isolada com 100% de cobertura de testes; validação por especialista financeiro |
-| Usuário não entender a diferença entre "parar de trabalhar" e "receber pensão" | Alta | Médio | Tooltips detalhados, exemplos no formulário, timeline visual explicita |
-| LGPD — coleta de dados financeiros sensíveis | Baixa | Alto | Política de privacidade clara; dados criptografados em repouso; não usar dados para publicidade |
-| Performance com projeções de 50+ anos mês a mês | Baixa | Médio | Calcular no frontend (sem I/O de rede); Web Worker para não bloquear UI |
-
----
-
-## 13. Glossário
+## 12. Glossário
 
 | Termo | Definição |
 |-------|-----------|
-| **Independência Financeira** | Condição em que o patrimônio investido gera renda suficiente para cobrir todas as despesas sem necessidade de trabalho ativo |
-| **Taxa de Retirada Segura** | Percentual do patrimônio que pode ser retirado anualmente sem esgotá-lo ao longo da vida. Referência histórica: 4% (Regra dos 4%) |
-| **Taxa Real de Retorno** | Rendimento do investimento descontada a inflação |
-| **Gap Previdenciário** | Período entre a idade de parar de trabalhar e o início dos benefícios previdenciários, financiado exclusivamente pelo patrimônio acumulado |
-| **PGBL** | Plano Gerador de Benefício Livre — previdência privada com dedução no IR |
-| **VGBL** | Vida Gerador de Benefício Livre — previdência privada sem dedução no IR |
-| **INSS** | Instituto Nacional do Seguro Social — aposentadoria pública brasileira |
-| **Regime Próprio** | Aposentadoria de servidores públicos estaduais ou federais (RPPS) |
+| **Gap Previdenciário** | Período entre `retirement_age` e o início do primeiro benefício previdenciário |
+| **Taxa de Retirada Segura** | % do patrimônio retirado anualmente sem esgotá-lo (padrão: 4% — Regra dos 4%) |
+| **Taxa Real de Retorno** | Rendimento já descontado a inflação |
+| **Snapshot** | Cópia imutável de `parameters` e `results` no momento do save |
+| **INSS** | Aposentadoria pública do trabalhador CLT/MEI |
+| **RPPS** | Regime Próprio — aposentadoria de servidores públicos |
+| **PGBL / VGBL** | Modalidades de previdência privada complementar |
 
 ---
 
-*Documento revisado em 01/06/2026. Próxima revisão prevista após conclusão da Fase 1.*
+*Versão 2.0 — Migrado de React/TypeScript para NiceGUI/Python em 01/06/2026.*

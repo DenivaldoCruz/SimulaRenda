@@ -1,191 +1,562 @@
 # SimulaRenda — Prompts para ChatGPT Codex
-**Aplicação:** Simulador de Renda Passiva com Calculadora de Aposentadoria  
-**Stack:** React 18 + TypeScript + Vite (frontend) · FastAPI + Python 3.12 (backend) · PostgreSQL 16 · Redis  
+**Stack:** FastAPI + NiceGUI (Python 3.12) · PostgreSQL 16 · Redis 7  
+**Não há JavaScript, TypeScript, Node.js ou npm neste projeto.**  
 **Metodologia:** TDD — escreva os testes antes da implementação em cada prompt  
-**Total:** 48 prompts organizados em 5 fases
+**Total:** 4 prompts de reversão + 48 prompts de implementação
 
 ---
 
-## FASE 1 — Setup e Infraestrutura (Prompts 1–8)
+# ⚠️ PROMPTS DE REVERSÃO — Execute primeiro, na ordem R01→R04
+
+> Você executou os prompts 01–04 da versão anterior (stack React/TypeScript).
+> Estes prompts desfazem tudo que era exclusivo do frontend React, preservam
+> integralmente o backend FastAPI (prompts 02, 03 e 04 — que continuam válidos)
+> e preparam o repositório para a nova stack NiceGUI.
 
 ---
 
-### Prompt 01 — Inicialização do Monorepo
+### Prompt R01 — Remover Frontend React e Pasta Shared
 
 ```
-Crie a estrutura de um monorepo para o projeto SimulaRenda com as seguintes pastas:
-- /frontend  (React 18 + TypeScript + Vite)
-- /backend   (FastAPI + Python 3.12)
-- /shared    (tipos TypeScript compartilhados)
+No repositório do SimulaRenda, remova completamente qualquer vestígio da stack
+React/TypeScript que foi criada no prompt 01 original:
 
-Na raiz, crie:
-- README.md com descrição do projeto e instruções de setup
-- .gitignore cobrindo Node, Python, .env e artefatos de build
-- docker-compose.yml com serviços: postgres (v16), redis (v7), backend e frontend
-- .env.example com as variáveis: DATABASE_URL, REDIS_URL, SECRET_KEY, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, CORS_ORIGINS
+1. Delete a pasta /frontend inteira (se existir):
+   rm -rf frontend/
 
-No /frontend, inicialize com: npm create vite@latest -- --template react-ts
-Instale as dependências: tailwindcss, @tailwindcss/vite, zustand, recharts, react-hook-form, zod, @hookform/resolvers, axios, react-router-dom, lucide-react
+2. Delete a pasta /shared inteira (se existir):
+   rm -rf shared/
 
-No /backend, crie pyproject.toml com dependências: fastapi, uvicorn[standard], sqlalchemy[asyncio], asyncpg, alembic, pydantic[email], pydantic-settings, python-jose[cryptography], passlib[bcrypt], redis, httpx, pytest, pytest-asyncio, httpx (para testes)
+3. No .gitignore da raiz, remova todas as linhas relacionadas a Node.js:
+   - node_modules/
+   - dist/
+   - .vite/
+   - *.tsbuildinfo
+   - .npm
+   Mantenha as linhas de Python (.venv, __pycache__, *.pyc, .env, etc.)
 
-Crie Makefile na raiz com targets: install, dev, test, lint, build, migrate
-```
+4. No docker-compose.yml, remova o serviço "frontend" inteiro (se existir).
+   Mantenha os serviços: postgres, redis, backend.
+   Atualize o serviço "backend" para expor a porta 8000 diretamente
+   (NiceGUI e FastAPI rodam no mesmo processo na porta 8000).
 
----
+5. No Makefile, remova os targets que referenciam npm, vite, node ou frontend:
+   - Remova: qualquer linha com npm, npx, vite, tsc, eslint (js)
+   - Mantenha e atualize: install, dev, test, lint, build, migrate
+   Os novos targets devem usar apenas pip/python:
+     install: pip install -e ".[dev]"
+     dev: uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+     test: pytest --cov=app --cov-report=term-missing
+     lint: ruff check app/ && mypy app/
+     migrate: alembic upgrade head
 
-### Prompt 02 — Configuração do Backend FastAPI
+6. Atualize o README.md:
+   - Remova qualquer menção a Node.js, npm, React, TypeScript, Vite
+   - Atualize a seção de setup para: Python 3.12, pip, variáveis de ambiente, make dev
+   - Adicione nota: "Frontend construído com NiceGUI — não há build step separado"
 
-```
-No /backend do projeto SimulaRenda, configure a aplicação FastAPI com:
+7. Verifique que não restam arquivos com extensão .ts, .tsx, .js (exceto
+   eventuais arquivos de config de ferramentas como .eslintrc — apague esses também),
+   package.json, package-lock.json, yarn.lock, pnpm-lock.yaml.
 
-1. Estrutura de pastas:
-   /backend
-     /app
-       /api/v1/routes/       (auth.py, simulations.py, users.py)
-       /core/                (config.py, security.py, dependencies.py)
-       /db/                  (session.py, base.py)
-       /models/              (user.py, simulation.py)
-       /schemas/             (user.py, simulation.py, auth.py)
-       /services/            (auth_service.py, simulation_service.py, calculator.py)
-       /tests/               (conftest.py, test_auth.py, test_simulations.py, test_calculator.py)
-       main.py
-     alembic.ini
-     /alembic/versions/
-
-2. Em app/core/config.py: classe Settings usando pydantic-settings lendo do .env as variáveis: DATABASE_URL, REDIS_URL, SECRET_KEY, ACCESS_TOKEN_EXPIRE_MINUTES=15, REFRESH_TOKEN_EXPIRE_DAYS=7, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, CORS_ORIGINS
-
-3. Em main.py: instância FastAPI com CORS configurado via settings.CORS_ORIGINS, inclusão dos routers com prefixo /api/v1, e lifespan gerenciando conexão com DB e Redis
-
-4. Em app/db/session.py: async engine com asyncpg e AsyncSession factory
-
-5. Em app/core/dependencies.py: funções get_db (AsyncSession), get_current_user (valida JWT e retorna User)
-
-Escreva primeiro os testes em /tests/conftest.py com fixtures: async_client (AsyncClient do httpx), test_db (banco SQLite em memória para testes)
-```
-
----
-
-### Prompt 03 — Modelos de Banco de Dados e Migrações
-
-```
-No /backend/app/models do SimulaRenda, crie os modelos SQLAlchemy com mapeamento declarativo async:
-
-1. user.py — modelo User:
-   - id: UUID primary key (default uuid4)
-   - email: String(255) unique not null
-   - name: String(255) nullable
-   - hashed_password: String nullable (nullable para OAuth)
-   - birth_date: Date nullable
-   - created_at: DateTime com default utcnow
-   - deleted_at: DateTime nullable (soft delete)
-   - Relacionamento: simulations (one-to-many)
-
-2. simulation.py — modelo Simulation:
-   - id: UUID primary key
-   - user_id: UUID FK users.id nullable (simulations anônimas via token)
-   - name: String(255) default 'Simulação sem título'
-   - parameters: JSONB not null
-   - results: JSONB not null
-   - share_token: String(64) unique nullable
-   - is_public: Boolean default False
-   - created_at: DateTime
-   - updated_at: DateTime com onupdate
-
-A estrutura exata do JSONB parameters deve validar:
-{
-  current_age, current_patrimony, monthly_contribution,
-  desired_monthly_income, retirement_age, life_expectancy,
-  inflation_rate, annual_real_return, safe_withdrawal_rate,
-  public_pension: { enabled, monthly_amount?, start_age?, amount_in_today_reais? },
-  private_pension: { enabled, monthly_amount?, start_age?, modality?, term_years?, amount_in_today_reais? }
-}
-
-Crie a migração Alembic inicial: alembic revision --autogenerate -m "create_users_and_simulations"
-
-Escreva testes em test_models.py verificando: criação de User, criação de Simulation vinculada a User, soft delete de User não apaga Simulations (SET NULL), constraint unique em share_token
+Após as remoções, rode:
+  find . -name "package.json" -not -path "*/node_modules/*"
+  find . -name "*.ts" -not -path "*/node_modules/*"
+Ambos devem retornar vazio. Confirme no output.
 ```
 
 ---
 
-### Prompt 04 — Schemas Pydantic (Request/Response)
+### Prompt R02 — Atualizar pyproject.toml com Dependências NiceGUI
 
 ```
-No /backend/app/schemas do SimulaRenda, crie os schemas Pydantic v2:
+No /backend/pyproject.toml do SimulaRenda, atualize as dependências para
+incluir NiceGUI e remover quaisquer pacotes que existiam apenas para servir
+o frontend React (como flask-cors ou similares que podem ter sido adicionados).
 
-1. auth.py:
-   - RegisterRequest: email (EmailStr), password (str, min 8 chars), name (str opcional)
-   - LoginRequest: email, password
-   - TokenResponse: access_token, refresh_token, token_type="bearer"
-   - GoogleAuthRequest: code (str), redirect_uri (str)
+Dependências de produção (substitua a seção [project.dependencies]):
+  fastapi>=0.111
+  uvicorn[standard]>=0.29
+  nicegui>=1.4
+  sqlalchemy[asyncio]>=2.0
+  asyncpg>=0.29
+  alembic>=1.13
+  pydantic[email]>=2.7
+  pydantic-settings>=2.3
+  python-jose[cryptography]>=3.3
+  passlib[bcrypt]>=1.7
+  redis>=5.0
+  slowapi>=0.1.9
+  plotly>=5.20
+  reportlab>=4.1
+  structlog>=24.0
+  httpx>=0.27
+  sentry-sdk[fastapi]>=2.0
 
-2. simulation.py:
-   - PublicPensionInput: enabled (bool), monthly_amount (Decimal opcional), start_age (int opcional, 18–80), amount_in_today_reais (bool default True)
-   - PrivatePensionInput: enabled (bool), monthly_amount (Decimal opcional), start_age (int opcional), modality (Enum: lifetime|fixed_term|lump_sum), term_years (int opcional), amount_in_today_reais (bool default True)
-   - SimulationParameters: current_age (int 18–80), current_patrimony (Decimal ≥ 0), monthly_contribution (Decimal > 0), desired_monthly_income (Decimal > 0), retirement_age (int, deve ser > current_age), life_expectancy (int, deve ser > retirement_age), inflation_rate (Decimal 0–0.20 default 0.045), annual_real_return (Decimal 0–0.30 default 0.06), safe_withdrawal_rate (Decimal 0.01–0.10 default 0.04), public_pension (PublicPensionInput), private_pension (PrivatePensionInput)
-   - Validadores customizados (@model_validator): retirement_age > current_age; life_expectancy > retirement_age; se pensão habilitada, start_age >= retirement_age
-   - PhaseResult: from_age, to_age, monthly_withdrawal_from_patrimony, monthly_income_total, sources (list[str])
-   - ProjectionPoint: age (int), patrimony (Decimal), monthly_income (Decimal)
-   - SimulationResults: required_patrimony, projected_patrimony, required_monthly_contribution, feasibility_status (Enum: viable|warning|unviable), patrimony_gap, phases (list[PhaseResult]), projection_series (list[ProjectionPoint])
-   - SimulationCreate: name (str), parameters (SimulationParameters)
-   - SimulationResponse: id, name, parameters, results, created_at, share_token, is_public
-   - SimulationListItem: id, name, feasibility_status, required_patrimony, projected_patrimony, created_at
+Dependências de desenvolvimento ([project.optional-dependencies] dev):
+  pytest>=8.0
+  pytest-asyncio>=0.23
+  pytest-cov>=5.0
+  anyio>=4.0
+  playwright>=1.44
+  ruff>=0.4
+  mypy>=1.10
 
-Escreva testes unitários para todos os validadores customizados nos schemas
+Configure o pyproject.toml com:
+  [tool.pytest.ini_options]
+  asyncio_mode = "auto"
+  testpaths = ["tests"]
+
+  [tool.coverage.run]
+  source = ["app"]
+  omit = ["app/ui/*"]   # UI NiceGUI testada via E2E, não unitariamente
+
+  [tool.mypy]
+  python_version = "3.12"
+  strict = true
+  ignore_missing_imports = true
+
+  [tool.ruff]
+  line-length = 100
+  select = ["E", "F", "I", "UP"]
+
+Rode pip install -e ".[dev]" e confirme que não há erros de instalação.
+Rode pytest --collect-only e confirme que os testes dos prompts 02, 03 e 04
+ainda são coletados e passam (backend não foi alterado).
 ```
 
 ---
 
-### Prompt 05 — Engine de Cálculo (TDD Completo)
+### Prompt R03 — Criar Estrutura de Pastas da UI NiceGUI
 
 ```
-No /backend/app/services/calculator.py do SimulaRenda, implemente a engine de cálculo financeiro.
+No /backend/app do SimulaRenda, crie a estrutura de pastas para a camada
+de UI NiceGUI. Não modifique nada nas pastas existentes: api/, core/, db/,
+models/, schemas/, services/, tests/. Apenas adicione o seguinte:
 
-ESCREVA OS TESTES PRIMEIRO em /tests/test_calculator.py cobrindo TODOS os cenários abaixo antes de implementar o código.
+Criar /backend/app/ui/ com a estrutura:
 
-Funções a implementar:
+app/ui/
+├── __init__.py          ← função register_pages() que registra todas as rotas NiceGUI
+├── pages/
+│   ├── __init__.py
+│   ├── home.py          ← página principal: formulário + resultados (rota '/')
+│   ├── simulations.py   ← histórico e comparação (rota '/minhas-simulacoes')
+│   ├── simulation_detail.py  ← detalhe/edição (rota '/simulacao/{id}')
+│   ├── shared.py        ← visualização pública read-only (rota '/compartilhado/{token}')
+│   ├── login.py         ← (rota '/entrar')
+│   └── register.py      ← (rota '/cadastrar')
+├── components/
+│   ├── __init__.py
+│   ├── simulation_form.py     ← formulário completo (5 seções)
+│   ├── results_panel.py       ← cards de resultado e banner de viabilidade
+│   ├── pension_timeline.py    ← linha do tempo de eventos previdenciários
+│   ├── patrimony_chart.py     ← gráfico Plotly evolução patrimonial
+│   ├── income_chart.py        ← gráfico Plotly composição de renda por fase
+│   └── simulation_card.py     ← card individual na lista de simulações
+└── state/
+    ├── __init__.py
+    └── simulation_state.py    ← dataclass SimulationState com todos os campos
 
-1. calculate_future_value(pv, pmt, annual_rate, months) -> Decimal
-   Fórmula: FV = PV*(1+r)^n + PMT*((1+r)^n - 1)/r
-   Teste: pv=150000, pmt=3000, annual_rate=0.06, months=240 → validar contra planilha de referência
+Em cada arquivo, crie apenas o esqueleto (imports + classe/função vazia com docstring).
+Não implemente nada ainda — isso é feito nos prompts seguintes.
 
-2. calculate_required_patrimony(desired_income, safe_withdrawal_rate, active_pensions_income) -> Decimal
-   Fórmula: (desired_income - active_pensions_income) * 12 / safe_withdrawal_rate
-   Teste: desired_income=10000, rate=0.04, pensions=2500 → 2.250.000
+Em app/ui/__init__.py, implemente register_pages():
+```python
+from app.ui.pages import home, simulations, simulation_detail, shared, login, register
 
-3. calculate_required_contribution(target_patrimony, current_patrimony, annual_rate, months) -> Decimal
-   Fórmula reversa do FV resolvendo para PMT
-   Teste: se já tem mais que o necessário → retorna 0
+def register_pages() -> None:
+    """Registra todas as rotas NiceGUI na aplicação."""
+    home.create()
+    simulations.create()
+    simulation_detail.create()
+    shared.create()
+    login.create()
+    register.create()
+```
 
-4. adjust_for_inflation(value, inflation_rate, years) -> Decimal
-   Fórmula: value * (1 + inflation_rate)^years
+Atualize app/main.py para integrar NiceGUI com FastAPI:
+```python
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from nicegui import ui
+from app.core.config import settings
+from app.api.v1.routes import auth, simulations, users
+from app.db.session import init_db
+from app.ui import register_pages
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await init_db()
+    yield
+
+app = FastAPI(title="SimulaRenda API", lifespan=lifespan)
+
+app.add_middleware(CORSMiddleware, allow_origins=settings.CORS_ORIGINS,
+                   allow_methods=["*"], allow_headers=["*"])
+
+app.include_router(auth.router, prefix="/api/v1", tags=["auth"])
+app.include_router(simulations.router, prefix="/api/v1", tags=["simulations"])
+app.include_router(users.router, prefix="/api/v1", tags=["users"])
+
+register_pages()
+
+ui.run_with(app, mount_path='/', storage_secret=settings.SECRET_KEY,
+            title='SimulaRenda', favicon='💰', dark=False,
+            host=settings.NICEGUI_HOST, port=settings.NICEGUI_PORT)
+```
+
+Confirme rodando: python -c "from app.main import app; print('OK')"
+Não deve haver ImportError.
+```
+
+---
+
+### Prompt R04 — Atualizar docker-compose e Variáveis de Ambiente
+
+```
+Atualize os arquivos de infraestrutura do SimulaRenda para refletir a nova
+arquitetura de processo único (NiceGUI + FastAPI na porta 8000):
+
+1. docker-compose.yml (desenvolvimento):
+   Deve conter exatamente 3 serviços:
+
+   postgres:
+     image: postgres:16-alpine
+     environment:
+       POSTGRES_DB: simularenda
+       POSTGRES_USER: simularenda
+       POSTGRES_PASSWORD: simularenda
+     ports: ["5432:5432"]
+     volumes: [postgres_data:/var/lib/postgresql/data]
+     healthcheck: pg_isready -U simularenda
+
+   redis:
+     image: redis:7-alpine
+     command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+     ports: ["6379:6379"]
+     volumes: [redis_data:/data]
+     healthcheck: redis-cli ping
+
+   backend:
+     build: ./backend
+     ports: ["8000:8000"]      ← porta única: NiceGUI + FastAPI + WebSocket
+     env_file: .env
+     depends_on:
+       postgres: {condition: service_healthy}
+       redis: {condition: service_healthy}
+     volumes: ["./backend:/app"]
+     command: uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+   volumes: [postgres_data, redis_data]
+
+2. docker-compose.prod.yml:
+   Adicione um serviço nginx na frente do backend com este bloco CRÍTICO:
+   (sem ele, a reatividade NiceGUI quebra em produção)
+
+   nginx:
+     image: nginx:alpine
+     ports: ["80:80", "443:443"]
+     volumes: ["./nginx.conf:/etc/nginx/conf.d/default.conf:ro"]
+     depends_on: [backend]
+
+   Crie nginx.conf com:
+   ```nginx
+   server {
+       listen 80;
+       location / {
+           proxy_pass http://backend:8000;
+           proxy_http_version 1.1;
+           proxy_set_header Upgrade $http_upgrade;
+           proxy_set_header Connection "upgrade";   # OBRIGATÓRIO para WebSocket NiceGUI
+           proxy_set_header Host $host;
+           proxy_set_header X-Real-IP $remote_addr;
+           proxy_read_timeout 86400;                # evita timeout no WebSocket
+       }
+   }
+   ```
+
+3. /backend/Dockerfile:
+   FROM python:3.12-slim
+   WORKDIR /app
+   COPY pyproject.toml .
+   RUN pip install -e ".[dev]"    # instala dependências incluindo NiceGUI
+   COPY . .
+   RUN useradd -m appuser && chown -R appuser /app
+   USER appuser
+   EXPOSE 8000
+   HEALTHCHECK CMD curl -f http://localhost:8000/api/v1/health || exit 1
+   CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+4. Atualize .env.example adicionando as variáveis NiceGUI:
+   NICEGUI_HOST=0.0.0.0
+   NICEGUI_PORT=8000
+   NICEGUI_STORAGE_SECRET=   # pode ser o mesmo valor que SECRET_KEY
+
+5. Atualize app/core/config.py adicionando ao Settings:
+   nicegui_host: str = "0.0.0.0"
+   nicegui_port: int = 8000
+   nicegui_storage_secret: str = ""
+
+   @model_validator(mode='after')
+   def set_storage_secret(self) -> 'Settings':
+       if not self.nicegui_storage_secret:
+           self.nicegui_storage_secret = self.secret_key
+       return self
+
+Após as alterações, execute:
+  docker-compose up -d postgres redis
+  make dev
+Acesse http://localhost:8000 e confirme que a página carrega (mesmo que vazia).
+Acesse http://localhost:8000/api/v1/health e confirme {"status":"healthy"}.
+```
+
+---
+
+# PROMPTS DE IMPLEMENTAÇÃO — Execute após R01–R04, na ordem
+
+**Stack atual confirmada:** FastAPI + NiceGUI (Python 3.12). Zero JavaScript/npm.  
+Os prompts 02, 03 e 04 originais (backend: modelos, migrações, schemas Pydantic)
+**continuam válidos e não precisam ser refeitos.**
+
+---
+
+## FASE 1 — Setup e Engine de Cálculo (Prompts 01–06)
+
+---
+
+### Prompt 01 — SimulationState: Estado Reativo Central
+
+```
+Em /backend/app/ui/state/simulation_state.py do SimulaRenda, implemente a
+dataclass SimulationState que centraliza todo o estado reativo da UI:
+
+```python
+from dataclasses import dataclass, field
+from decimal import Decimal
+from typing import Optional
+from enum import Enum
+
+class FeasibilityStatus(str, Enum):
+    VIABLE = "viable"
+    WARNING = "warning"
+    UNVIABLE = "unviable"
+
+@dataclass
+class SimulationState:
+    # --- Inputs: Situação Atual ---
+    current_age: int = 30
+    current_patrimony: Decimal = Decimal('0')
+    monthly_contribution: Decimal = Decimal('1000')
+
+    # --- Inputs: Metas ---
+    desired_monthly_income: Decimal = Decimal('10000')
+    retirement_age: int = 55
+    life_expectancy: int = 90
+
+    # --- Inputs: Parâmetros Econômicos ---
+    inflation_rate: Decimal = Decimal('0.045')
+    annual_real_return: Decimal = Decimal('0.06')
+    safe_withdrawal_rate: Decimal = Decimal('0.04')
+
+    # --- Inputs: Aposentadoria Pública ---
+    public_pension_enabled: bool = False
+    public_pension_amount: Decimal = Decimal('0')
+    public_pension_start_age: int = 65
+    public_pension_in_today_reais: bool = True
+
+    # --- Inputs: Previdência Privada ---
+    private_pension_enabled: bool = False
+    private_pension_amount: Decimal = Decimal('0')
+    private_pension_start_age: int = 60
+    private_pension_modality: str = 'lifetime'  # lifetime | fixed_term | lump_sum
+    private_pension_term_years: Optional[int] = None
+    private_pension_in_today_reais: bool = True
+
+    # --- Outputs (preenchidos pelo calculator) ---
+    results: Optional[dict] = None
+    is_calculating: bool = False
+
+    # --- Metadados de persistência ---
+    is_dirty: bool = False
+    saved_simulation_id: Optional[str] = None
+    saved_simulation_name: Optional[str] = None
+
+    def to_parameters_dict(self) -> dict:
+        """Converte state para o schema SimulationParameters (usado no save)."""
+        return {
+            "current_age": self.current_age,
+            "current_patrimony": float(self.current_patrimony),
+            "monthly_contribution": float(self.monthly_contribution),
+            "desired_monthly_income": float(self.desired_monthly_income),
+            "retirement_age": self.retirement_age,
+            "life_expectancy": self.life_expectancy,
+            "inflation_rate": float(self.inflation_rate),
+            "annual_real_return": float(self.annual_real_return),
+            "safe_withdrawal_rate": float(self.safe_withdrawal_rate),
+            "public_pension": {
+                "enabled": self.public_pension_enabled,
+                "monthly_amount": float(self.public_pension_amount),
+                "start_age": self.public_pension_start_age,
+                "amount_in_today_reais": self.public_pension_in_today_reais,
+            },
+            "private_pension": {
+                "enabled": self.private_pension_enabled,
+                "monthly_amount": float(self.private_pension_amount),
+                "start_age": self.private_pension_start_age,
+                "modality": self.private_pension_modality,
+                "term_years": self.private_pension_term_years,
+                "amount_in_today_reais": self.private_pension_in_today_reais,
+            },
+        }
+
+    def is_valid(self) -> tuple[bool, list[str]]:
+        """Retorna (valido, lista_de_erros)."""
+        errors = []
+        if self.monthly_contribution <= 0:
+            errors.append("Aporte mensal deve ser maior que zero")
+        if self.retirement_age <= self.current_age:
+            errors.append("Idade de aposentadoria deve ser maior que a idade atual")
+        if self.life_expectancy <= self.retirement_age:
+            errors.append("Expectativa de vida deve ser maior que a idade de aposentadoria")
+        if self.public_pension_enabled:
+            if self.public_pension_start_age < self.retirement_age:
+                errors.append("Início do INSS não pode ser antes de parar de trabalhar")
+            if self.public_pension_amount <= 0:
+                errors.append("Valor do benefício público deve ser maior que zero")
+        if self.private_pension_enabled:
+            if self.private_pension_start_age < self.retirement_age:
+                errors.append("Início da previdência não pode ser antes de parar de trabalhar")
+            if self.private_pension_amount <= 0:
+                errors.append("Valor do benefício privado deve ser maior que zero")
+        return len(errors) == 0, errors
+```
+
+Escreva testes em tests/test_simulation_state.py:
+- to_parameters_dict() retorna dict com todas as chaves esperadas
+- is_valid() retorna False quando retirement_age <= current_age
+- is_valid() retorna False quando public_pension_start_age < retirement_age
+- is_valid() retorna True com valores padrão válidos
+- is_valid() retorna lista de erros descritivos para cada violação
+```
+
+---
+
+### Prompt 02 — Engine de Cálculo (TDD Completo)
+
+```
+Em /backend/app/services/calculator.py do SimulaRenda, implemente a engine
+de cálculo financeiro com TDD completo.
+
+ESCREVA OS TESTES PRIMEIRO em tests/test_calculator.py antes de qualquer
+linha de implementação. Meta: 100% de cobertura.
+
+Funções a implementar (todas com type hints e Decimal):
+
+1. calculate_future_value(pv: Decimal, pmt: Decimal,
+                          annual_rate: Decimal, months: int) -> Decimal
+   FV = PV*(1+r)^n + PMT*((1+r)^n - 1)/r  onde r = annual_rate/12
+   Caso especial: se annual_rate == 0 → FV = PV + PMT * months
+
+2. calculate_required_patrimony(desired_income: Decimal,
+                                 safe_withdrawal_rate: Decimal,
+                                 active_pensions_income: Decimal) -> Decimal
+   P = (desired_income - active_pensions_income) * 12 / safe_withdrawal_rate
+
+3. calculate_required_contribution(target: Decimal, pv: Decimal,
+                                    annual_rate: Decimal, months: int) -> Decimal
+   PMT reverso; retorna Decimal(0) se pv*(1+r)^n >= target
+
+4. adjust_for_inflation(value: Decimal, inflation_rate: Decimal,
+                         years: int) -> Decimal
+   value * (1 + inflation_rate)^years
 
 5. simulate_phases(params: SimulationParameters) -> list[PhaseResult]
-   Regras:
-   - Fase 1: retirement_age até min(public_pension.start_age, private_pension.start_age) se habilitados
-   - Fases intermediárias: cada vez que um benefício começa, nova fase
-   - Fase final: todos os benefícios ativos até life_expectancy
-   - Cada fase retorna from_age, to_age, monthly_withdrawal_from_patrimony, sources
+   Constrói as fases a partir dos eventos previdenciários:
+   - Ordena eventos habilitados por start_age
+   - Fase inicial: retirement_age → primeiro start_age (ou life_expectancy)
+   - Fase por evento: start_age_N → start_age_N+1
+   - Fase final: último start_age → life_expectancy
+   - Cada fase: from_age, to_age, sources, monthly_withdrawal_from_patrimony
 
-6. simulate_projection(params: SimulationParameters) -> tuple[list[ProjectionPoint], bool]
-   Simula mês a mês: acumulação até retirement_age, retiradas após
-   Retorna série de pontos (age, patrimony) e flag patrimony_exhausted
-   Teste: patrimônio não deve zerar se plano for viável
+6. simulate_projection(params: SimulationParameters
+                       ) -> tuple[list[ProjectionPoint], bool, Optional[int]]
+   Retorna (série de pontos, patrimony_exhausted, exhaustion_age)
+   Fase acumulação: mês a mês até retirement_age
+   Fase retirada: mês a mês até life_expectancy
+   Patrimônio nunca negativo (clamp em 0)
 
 7. run_full_simulation(params: SimulationParameters) -> SimulationResults
-   Orquestra todas as funções acima e determina feasibility_status:
-   - viable: projected >= required
-   - warning: projected >= required * 0.80
-   - unviable: projected < required * 0.80
+   Orquestra tudo; determina feasibility_status
 
-Todos os cálculos devem usar Decimal com precisão de 2 casas para valores monetários e 6 para taxas. Sem usar float para evitar erros de precisão.
+Casos de teste obrigatórios:
+- Patrimônio já suficiente → required_contribution = 0 (não negativo)
+- Taxa real = 0% → só soma aportes
+- Inflação = 0% → valores sem correção
+- Ambas pensões com start_age = retirement_age → sem gap
+- Gap de 15 anos → fases corretas e alerta no exhaustion_age
+- Patrimônio esgota antes da expectativa de vida → patrimony_exhausted=True
+- Fase com fixed_term: benefício cessa após term_years, fase seguinte recalcula
+- Divisão por zero impossível: safe_withdrawal_rate nunca é 0 (validado no schema)
+
+Execute: pytest tests/test_calculator.py --cov=app/services/calculator --cov-fail-under=100
 ```
 
 ---
 
-### Prompt 06 — Autenticação JWT e Google OAuth
+### Prompt 03 — Engine de Cálculo: Casos de Borda
 
 ```
+Em tests/test_calculator.py do SimulaRenda, adicione os testes de borda que
+garantem robustez da engine. Execute-os; se algum falhar, corrija calculator.py.
+
+Casos a cobrir:
+
+1. retirement_age = current_age + 1 (acumulação de apenas 1 ano)
+   → FV deve ser calculado corretamente para 12 meses
+
+2. life_expectancy = retirement_age + 1 (usufruto de apenas 1 ano)
+   → phases deve ter exatamente 1 fase
+   → projection_series deve ter pontos apenas até essa idade
+
+3. Patrimônio atual = 0 e aporte = 0
+   → FV = 0; required_contribution = target
+
+4. Taxa de retirada = 10% (máxima permitida)
+   → required_patrimony menor; status mais provavelmente viable
+
+5. Previdência privada com modality=lump_sum, start_age=60
+   → Deve ser modelada como pagamento único: sem renda mensal recorrente após o recebimento
+   → Adiciona o valor ao patrimônio em start_age em vez de reduzir a retirada mensal
+
+6. Previdência privada com modality=fixed_term, term_years=10, start_age=60
+   → Benefício ativo dos 60 aos 70; após 70 some das sources
+   → Phase de 60-70 inclui private_pension; phase de 70+ não inclui
+
+7. Dois benefícios com mesmo start_age (raro mas possível)
+   → Não duplicar fases; ambos entram na mesma fase
+
+8. desired_monthly_income menor que a soma dos benefícios
+   → monthly_withdrawal_from_patrimony = 0 (não negativo)
+   → Patrimônio só cresce na fase de retirada
+
+9. Todos os valores em Decimal com precisão máxima
+   → Resultado de calculate_future_value não deve ter mais de 2 casas decimais monetárias
+   → Diferença de resultado entre Decimal e float deve ser detectável (assert diferenças > 0.01 para inputs grandes)
+
+Configure coverage:
+pytest tests/test_calculator.py --cov=app/services/calculator --cov-report=html
+Abra htmlcov/index.html e confirme 100%. Corrija qualquer branch não coberto.
+```
+
+---
+
+### Prompt 04 — Autenticação JWT e Google OAuth
+
+```
+(Conteúdo idêntico ao Prompt 06 da versão anterior — backend não mudou)
+
 No /backend/app do SimulaRenda, implemente autenticação completa:
 
 1. app/core/security.py:
@@ -196,1382 +567,1245 @@ No /backend/app do SimulaRenda, implemente autenticação completa:
    - decode_token(token: str) -> dict (lança HTTPException 401 se inválido/expirado)
 
 2. app/services/auth_service.py:
-   - register(db, data: RegisterRequest) -> User (verifica email único, faz hash da senha)
-   - login(db, data: LoginRequest) -> TokenResponse (verifica credenciais, gera par de tokens)
-   - google_auth(db, code: str, redirect_uri: str) -> TokenResponse (troca code por token Google, obtém perfil, upsert User sem senha)
-   - refresh_token(db, refresh_token: str) -> TokenResponse (valida refresh, gera novo par)
-   - logout(redis, refresh_token: str) -> None (adiciona token a blocklist no Redis com TTL=7dias)
+   - register(db, data: RegisterRequest) -> User
+   - login(db, data: LoginRequest) -> TokenResponse
+   - google_auth(db, code: str, redirect_uri: str) -> TokenResponse
+   - refresh_token(db, refresh_token: str) -> TokenResponse
+   - logout(redis_client, refresh_token: str) -> None (blocklist no Redis, TTL=7dias)
 
 3. app/api/v1/routes/auth.py:
-   - POST /register → RegisterRequest → TokenResponse
-   - POST /login → LoginRequest → TokenResponse
-   - POST /google → GoogleAuthRequest → TokenResponse
-   - POST /refresh → body {refresh_token} → TokenResponse
-   - POST /logout → header Authorization → 204
+   POST /register, POST /login, POST /google, POST /refresh, POST /logout
 
-Escreva testes em test_auth.py:
-- Registro com email duplicado retorna 409
-- Login com senha errada retorna 401
-- Token expirado retorna 401
-- Logout invalida token (segundo uso retorna 401)
-- Fluxo Google OAuth mockado com httpx_mock
+Testes em tests/test_auth.py:
+- Email duplicado → 409
+- Senha errada → 401
+- Token expirado → 401
+- Logout invalida token (segundo uso → 401)
+- Google OAuth mockado com httpx_mock
 ```
 
 ---
 
-### Prompt 07 — CRUD de Simulações (API)
+### Prompt 05 — CRUD de Simulações (API REST)
 
 ```
-No /backend/app/api/v1/routes/simulations.py do SimulaRenda, implemente os endpoints REST:
+(Conteúdo idêntico ao Prompt 07 da versão anterior — backend não mudou)
 
-POST /simulations/calculate
-- Não requer autenticação
-- Body: SimulationParameters
-- Retorna: SimulationResults (calculado na hora, não persiste)
-- Rate limit: 30 req/min por IP (via Redis)
+No /backend/app/api/v1/routes/simulations.py do SimulaRenda:
 
-POST /simulations
-- Requer autenticação (get_current_user)
-- Body: SimulationCreate {name, parameters}
-- Calcula results via calculator.run_full_simulation
-- Persiste no banco
-- Retorna: SimulationResponse 201
+POST   /simulations/calculate  → calcula sem persistir (rate limit 30/min)
+POST   /simulations            → cria e salva (requer auth)
+GET    /simulations            → lista paginada do usuário
+GET    /simulations/{id}       → detalhe
+PUT    /simulations/{id}       → atualiza nome/parâmetros (recalcula se params mudou)
+DELETE /simulations/{id}       → remove
+POST   /simulations/{id}/share → {enable: bool} → gera/revoga share_token
+GET    /simulations/shared/{token} → público, sem auth
 
-GET /simulations
-- Requer autenticação
-- Query params: page=1, size=10, order_by=created_at|name
-- Retorna: PaginatedResponse[SimulationListItem]
-- Filtra por user_id do token, exclui deleted
+Regra importante: results é SEMPRE recalculado no servidor no POST e PUT.
+Nunca aceitar results enviados pelo cliente.
 
-GET /simulations/{id}
-- Requer autenticação
-- Retorna: SimulationResponse completo
-- 404 se não pertencer ao usuário
-
-PUT /simulations/{id}
-- Requer autenticação
-- Body: {name?: str, parameters?: SimulationParameters}
-- Se parameters mudou, recalcula results
-- Retorna: SimulationResponse atualizado
-
-DELETE /simulations/{id}
-- Requer autenticação
-- Hard delete
-- Retorna 204
-
-POST /simulations/{id}/share
-- Requer autenticação
-- Body: {enable: bool}
-- Se enable=true: gera share_token (secrets.token_urlsafe(32)) e is_public=true
-- Se enable=false: limpa share_token e is_public=false
-- Retorna: {share_token: str | null, share_url: str | null}
-
-GET /simulations/shared/{token}
-- Sem autenticação
-- Retorna: SimulationResponse (read-only)
-- 404 se token inválido ou is_public=false
-
-Escreva testes de integração em test_simulations.py para todos os endpoints incluindo casos de erro e autorização
+Testes de integração em tests/test_simulations.py cobrindo todos os endpoints,
+autorização e casos de erro.
 ```
 
 ---
 
-### Prompt 08 — Setup do Frontend React
+### Prompt 06 — Seed de Dados para Desenvolvimento
 
 ```
-No /frontend do SimulaRenda, configure a aplicação React com:
+Em /backend/scripts/ do SimulaRenda, crie dois scripts:
 
-1. Configuração Tailwind CSS v4 no vite.config.ts com @tailwindcss/vite
+seed_dev.py:
+  Cria dados de desenvolvimento ao rodar: python scripts/seed_dev.py
+  - 3 usuários de teste:
+    dev@simularenda.com / Dev@12345
+    usuario@teste.com  / Teste@123
+    admin@simularenda.com / Admin@123
+  - 5 simulações para cada usuário com parâmetros variados,
+    cobrindo os três status: viable, warning e unviable
+  - Pelo menos 2 simulações com share_token gerado (is_public=True)
+  - Script é idempotente: rodar 2x não duplica dados
 
-2. Paleta de cores no CSS global (index.css) usando variáveis CSS:
-   --color-primary: #0F766E (teal-700)
-   --color-primary-light: #14B8A6 (teal-500)
-   --color-success: #16A34A
-   --color-warning: #D97706
-   --color-danger: #DC2626
-   --color-bg: #F8FAFC
-   --color-surface: #FFFFFF
-   --color-text: #0F172A
-   --color-muted: #64748B
+reset_dev.py:
+  - Verifica que DATABASE_URL contém 'localhost' ou 'dev' (proteção)
+  - DROP + recria todas as tabelas via Alembic
+  - Chama seed_dev.py
 
-3. React Router v6 com as rotas:
-   / → HomePage (simulador principal)
-   /minhas-simulacoes → SimulationsPage (requer auth)
-   /simulacao/:id → SimulationDetailPage (requer auth)
-   /compartilhado/:token → SharedSimulationPage (público)
-   /entrar → LoginPage
-   /cadastrar → RegisterPage
+Atualize o Makefile:
+  seed:     cd backend && python scripts/seed_dev.py
+  reset-db: cd backend && python scripts/reset_dev.py
+  shell:    cd backend && python -c "import asyncio; from app.db.session import AsyncSessionLocal; ..."
 
-4. Zustand stores:
-   - useAuthStore: { user, accessToken, setAuth, clearAuth, isAuthenticated }
-   - useSimulationStore: { parameters, results, isDirty, setParameters, setResults, resetForm }
-
-5. Configuração do axios em /src/lib/api.ts:
-   - baseURL do .env
-   - interceptor de request: adiciona Authorization header se token presente
-   - interceptor de response: se 401, tenta refresh token; se falhar, chama clearAuth e redireciona para /entrar
-
-6. Componente ProtectedRoute que redireciona para /entrar se não autenticado
-
-Crie testes com Vitest + Testing Library para: useAuthStore (set/clear), axios interceptors (mock com msw), ProtectedRoute (redireciona sem auth, renderiza com auth)
+Testes em tests/test_scripts.py:
+- seed não falha em banco limpo
+- seed é idempotente (rodar 2x não duplica usuários)
+- reset_dev lança ValueError se DATABASE_URL não contiver 'localhost' ou 'dev'
 ```
 
 ---
 
-## FASE 2 — Formulário de Simulação (Prompts 9–18)
+## FASE 2 — UI NiceGUI: Formulário (Prompts 07–14)
 
 ---
 
-### Prompt 09 — Componente: CurrencyInput
+### Prompt 07 — Layout Base e Navegação
 
 ```
-No /frontend/src/components/ui do SimulaRenda, crie o componente CurrencyInput:
+Em /backend/app/ui/pages/ do SimulaRenda, implemente o layout base e a
+navegação que envolve todas as páginas.
 
-Props:
-- name: string
-- label: string
-- value: number
-- onChange: (value: number) => void
-- min?: number (default 0)
-- max?: number
-- placeholder?: string
-- hint?: string (texto de ajuda abaixo do campo)
-- error?: string
-- disabled?: boolean
+Crie app/ui/components/layout.py com a função page_layout(title: str):
+  Context manager que envolve o conteúdo de cada página com:
+  - Header fixo no topo:
+    - Esquerda: logo "💰 SimulaRenda" (ui.link → '/')
+    - Direita (se autenticado, lendo app.storage.user):
+        Avatar com iniciais do nome em ui.avatar
+        ui.button "Minhas Simulações" → '/minhas-simulacoes'
+        ui.button "Sair" → chama logout e redireciona para '/'
+    - Direita (se não autenticado):
+        ui.button "Entrar" → '/entrar'
+        ui.button "Cadastrar" (outline) → '/cadastrar'
+  - Conteúdo central com max-width 1200px e padding lateral
+  - Footer simples com copyright
 
-Comportamento:
-- Exibe valor formatado como moeda brasileira: R$ 1.234,56
-- Ao digitar, aceita apenas dígitos; formata em tempo real da direita para esquerda (como caixa registradora)
-- Valor interno é sempre number (centavos / 100)
-- Ao perder foco, garante formatação correta
-- Se value=0, exibe placeholder ao invés de R$ 0,00
+Implemente app/ui/pages/home.py com a função create():
+  @ui.page('/')
+  async def home_page():
+      with page_layout("SimulaRenda — Planeje sua Independência Financeira"):
+          # Placeholder por enquanto — componentes adicionados nos próximos prompts
+          ui.label("Formulário em construção").classes("text-2xl")
 
-Estilo:
-- Input com borda arredondada, foco com ring teal
-- Label acima, hint e error abaixo em texto menor
-- Ícone R$ à esquerda como prefix visual (não editável)
+Implemente páginas placeholder (apenas rota + layout + label) para:
+  /entrar, /cadastrar, /minhas-simulacoes, /simulacao/{id}, /compartilhado/{token}
 
-Escreva testes:
-- Renderiza com label e hint
-- Formata R$ 1.234,56 corretamente
-- Chama onChange com valor numérico correto
-- Exibe mensagem de erro
-- Não permite valor negativo quando min=0
-```
+Paleta de cores do projeto (adicione em CSS customizado via ui.add_head_html):
+  --color-primary: #0F766E
+  --color-primary-light: #14B8A6
+  --color-success: #16A34A
+  --color-warning: #D97706
+  --color-danger: #DC2626
 
----
-
-### Prompt 10 — Componente: SliderInput
-
-```
-No /frontend/src/components/ui do SimulaRenda, crie o componente SliderInput:
-
-Props:
-- name: string
-- label: string
-- value: number
-- onChange: (value: number) => void
-- min: number
-- max: number
-- step?: number (default 1)
-- unit?: string (ex: "anos", "%")
-- hint?: string
-- error?: string
-- marks?: Array<{value: number, label: string}> (pontos de referência no slider)
-
-Comportamento:
-- Slider HTML nativo estilizado com Tailwind + CSS custom para thumb e track
-- Input numérico ao lado direito, sincronizado bidirecionalmente com o slider
-- Ao digitar no input, valida range e atualiza slider
-- Marks renderizados abaixo do slider com linha pontilhada
-
-Estilo:
-- Track: bg-slate-200, parte preenchida bg-teal-500
-- Thumb: círculo branco com sombra e borda teal
-- Input numérico: pequeno, alinhado à direita, sufixo com unit
-
-Escreva testes:
-- Sincronização slider ↔ input
-- Clamp de valores fora do range
-- Renderização de marks
-- Disparo correto do onChange
+Teste E2E em e2e/test_navigation.py:
+- GET / retorna 200
+- GET /entrar retorna 200
+- GET /minhas-simulacoes redireciona para /entrar (sem auth)
+- Header contém "SimulaRenda"
 ```
 
 ---
 
-### Prompt 11 — Componente: PercentageInput
+### Prompt 08 — Seção: Situação Atual e Metas
 
 ```
-No /frontend/src/components/ui do SimulaRenda, crie o componente PercentageInput:
+Em /backend/app/ui/components/simulation_form.py do SimulaRenda, implemente
+as duas primeiras seções do formulário usando NiceGUI.
 
-Props:
-- name: string
-- label: string
-- value: number (0 a 1, ex: 0.045 para 4,5%)
-- onChange: (value: number) => void
-- min?: number (default 0)
-- max?: number (default 1)
-- step?: number (default 0.001)
-- hint?: string
-- error?: string
-- benchmark?: string (ex: "Selic atual: 10,5% a.a." exibido como referência)
+A função build_simulation_form(state: SimulationState, on_change: Callable)
+monta o formulário completo. Neste prompt, implemente as seções 1 e 2.
 
-Comportamento:
-- Exibe e recebe valor como percentual (ex: 4,50%)
-- Internamente converte para decimal ao chamar onChange
-- Aceita digitação com vírgula ou ponto como separador decimal
-- Sufixo "% a.a." não editável
+Seção 1 — "Situação Atual":
+  ui.card com ui.card_section:
+    - Patrimônio atual investido:
+        ui.number(label='Patrimônio atual investido', prefix='R$', min=0, step=1000)
+        .bind_value(state, 'current_patrimony')
+        .on('update:model-value', on_change)
+        + ui.tooltip("Some todos os seus investimentos: CDB, fundos, ações, previdência...")
 
-Estilo:
-- Benchmark exibido em badge verde claro abaixo do campo
-- Mesma identidade visual dos demais inputs
+    - Aporte mensal:
+        ui.number(label='Aporte mensal', prefix='R$', min=0, step=100)
+        .bind_value(state, 'monthly_contribution')
+        .on('update:model-value', on_change)
+        + ui.tooltip("Quanto você investe por mês. Inclua aportes em previdência privada.")
 
-Escreva testes cobrindo conversão decimal ↔ percentual e exibição do benchmark
-```
+    - Idade atual:
+        Row com ui.slider(min=18, max=70) e ui.number(min=18, max=70) sincronizados
+        bind_value em ambos para state.current_age
 
----
+Seção 2 — "Metas de Independência":
+  ui.card com ui.card_section:
+    - Renda mensal desejada:
+        ui.number(label='Renda mensal desejada', prefix='R$', min=100, step=500)
+        + ui.tooltip("Valor em reais de hoje. Corrigido pela inflação automaticamente.")
 
-### Prompt 12 — Componente: TooltipInfo
+    - Idade para parar de trabalhar:
+        Row: slider(min=current_age+1, max=80) + number sincronizados
+        Marks no slider: 50, 55, 60, 65
+        ui.tooltip("Pode ser diferente da data em que começará a receber INSS...")
+        Badge reativo: "Você terá X anos de aposentadoria" (life_expectancy - retirement_age)
 
-```
-No /frontend/src/components/ui do SimulaRenda, crie o componente TooltipInfo:
+    - Expectativa de vida:
+        Row: slider(min=retirement_age+1, max=110, value=90) + number sincronizados
+        Quando retirement_age muda e life_expectancy <= novo retirement_age:
+          ajustar automaticamente life_expectancy = retirement_age + 1
 
-Props:
-- content: string | React.ReactNode
-- position?: 'top' | 'right' | 'bottom' | 'left' (default 'top')
-- maxWidth?: number (default 280px)
-
-Comportamento:
-- Ícone de interrogação (lucide-react: HelpCircle) que ao hover/focus exibe tooltip
-- Tooltip com animação fade-in (CSS transition opacity)
-- Acessível: role="tooltip", aria-describedby no elemento-alvo
-- Fecha ao pressionar Escape
-- Em mobile: abre modal bottom-sheet ao invés de tooltip (breakpoint < 640px)
-
-Uso pretendido: colocado ao lado de labels de campos complexos como "Taxa de Retirada Segura"
-
-Escreva testes:
-- Tooltip aparece no hover
-- Tooltip fecha no Escape
-- Conteúdo está acessível via aria
+Testes unitários em tests/ui/test_form_sections.py:
+- Ajuste automático de life_expectancy ao mudar retirement_age
+- Badge mostra diferença correta
+- on_change é chamado ao atualizar qualquer campo
 ```
 
 ---
 
-### Prompt 13 — Seção: Situação Atual do Formulário
+### Prompt 09 — Seção: Aposentadoria Pública
 
 ```
-No /frontend/src/features/simulation/components do SimulaRenda, crie o componente CurrentSituationSection:
+Em build_simulation_form() do SimulaRenda, adicione a seção de aposentadoria pública.
 
-Campos a renderizar (usando componentes CurrencyInput, SliderInput, TooltipInfo):
-1. Patrimônio atual investido (R$) — CurrencyInput, min=0
-2. Aporte mensal (R$) — CurrencyInput, min=0
-3. Idade atual (anos) — SliderInput, min=18, max=70
+Seção 3 — "Aposentadoria Pública (INSS / Regime Próprio)":
 
-Tooltips:
-- Patrimônio: "Some todos os seus investimentos: CDB, fundos, ações, previdência privada, etc. Não inclua imóveis para moradia."
-- Aporte mensal: "Quanto você consegue investir todo mês. Inclua aportes em previdência privada."
+  ui.expansion("Aposentadoria Pública (INSS / Regime Próprio)", icon="account_balance"):
+    Header com ui.switch vinculado a state.public_pension_enabled
+    Conteúdo (visível apenas se switch ON via .bind_visibility_from):
 
-Estado: lê e escreve em useSimulationStore via react-hook-form + zod
-Schema zod para esta seção:
-- current_patrimony: z.number().min(0)
-- monthly_contribution: z.number().min(1, "Informe um aporte maior que zero")
-- current_age: z.number().int().min(18).max(70)
+      - Valor do benefício:
+          ui.number(label='Valor mensal do benefício', prefix='R$', min=1)
+          .bind_value(state, 'public_pension_amount')
+          + ui.tooltip("Consulte o extrato no Meu INSS (meu.inss.gov.br).")
 
-Escreva testes:
-- Renderiza todos os campos
-- Erro de validação aparece ao submeter vazio
-- Valores são gravados no store ao mudar
-```
+      - Idade de início do recebimento:
+          Row: slider(min=state.retirement_age, max=80) + number sincronizados
+          bind a state.public_pension_start_age
+          ui.tooltip("Pode ser igual ou posterior à idade de parar de trabalhar...")
 
----
+      - Alerta de gap (reativo, recalculado quando start_age ou retirement_age muda):
+          Se public_pension_start_age > retirement_age:
+            ui.banner(type='warning'):
+              "⚠️ Gap de {start_age - retirement_age} anos sem este benefício.
+               Seu patrimônio precisará cobrir R$ {desired_monthly_income}/mês neste período."
+          Visível apenas quando o gap > 0
 
-### Prompt 14 — Seção: Metas de Independência
+      - Toggle "O valor informado está em reais de hoje?":
+          ui.switch.bind_value(state, 'public_pension_in_today_reais')
 
-```
-No /frontend/src/features/simulation/components do SimulaRenda, crie o componente IndependenceGoalsSection:
-
-Campos:
-1. Renda mensal desejada na independência (R$) — CurrencyInput, min=100
-   Tooltip: "Valor em reais de hoje. O simulador corrige pela inflação automaticamente."
-2. Idade para parar de trabalhar (anos) — SliderInput, min=current_age+1, max=80
-   Tooltip: "Esta é a idade em que você planeja parar de trabalhar ativamente. Pode ser diferente da idade em que começará a receber INSS ou previdência privada."
-   Marks: [{ value: 55, label: "55" }, { value: 60, label: "60" }, { value: 65, label: "65" }]
-3. Expectativa de vida (anos) — SliderInput, min=retirement_age+1, max=110, default=90
-   Tooltip: "Use 90 como referência conservadora. Para maior segurança, use 95 ou 100."
-
-Comportamento especial:
-- Quando "idade para parar de trabalhar" muda, garante que expectativa de vida > novo valor
-- Exibe badge informativo: "Você terá X anos de aposentadoria" (life_expectancy - retirement_age)
-
-Validação zod:
-- desired_monthly_income: z.number().min(100)
-- retirement_age: z.number().refine(val => val > current_age, "Deve ser maior que sua idade atual")
-- life_expectancy: z.number().refine(val => val > retirement_age, "Deve ser maior que a idade de parar de trabalhar")
-
-Escreva testes para a lógica do badge e do ajuste automático da expectativa de vida
+Testes:
+- Campos ficam visíveis apenas quando switch ON
+- Alerta de gap aparece quando start_age > retirement_age
+- Alerta desaparece quando start_age == retirement_age
+- Slider de start_age não permite valor < retirement_age
 ```
 
 ---
 
-### Prompt 15 — Seção: Aposentadoria Pública (INSS / RPPS)
+### Prompt 10 — Seção: Previdência Privada
 
 ```
-No /frontend/src/features/simulation/components do SimulaRenda, crie o componente PublicPensionSection:
+Em build_simulation_form() do SimulaRenda, adicione a seção de previdência privada.
 
-Estrutura:
-- Toggle "Vou receber aposentadoria pública (INSS ou Regime Próprio)" (expandido/colapsado com animação)
-- Quando habilitado, exibe os campos abaixo
+Seção 4 — "Previdência Privada (PGBL / VGBL)":
 
-Campos (quando habilitado):
-1. Valor estimado do benefício (R$) — CurrencyInput
-   Tooltip: "Consulte o extrato no Meu INSS (meu.inss.gov.br) para estimar sua aposentadoria. Use o valor em reais de hoje."
-2. Idade de início do recebimento — SliderInput, min=retirement_age, max=80
-   Tooltip: "Pode ser igual ou posterior à idade de parar de trabalhar. O período entre as duas idades será coberto exclusivamente pelo seu patrimônio acumulado."
-   Destaque visual: se start_age > retirement_age, exibe alerta amarelo:
-   "⚠️ Gap de X anos sem este benefício. Seu patrimônio precisará cobrir R$ Y/mês neste período."
-3. Toggle "O valor informado já está em reais de hoje?" (default: Sim)
+  Estrutura análoga ao Prompt 09 com:
 
-Validação zod:
-- monthly_amount: z.number().min(1).optional()
-- start_age: z.number().min(retirement_age, "Não pode ser antes de parar de trabalhar")
+  - Valor mensal do benefício (mesmo padrão)
 
-Escreva testes para: toggle expand/collapse, cálculo e exibição do alerta de gap, validação de start_age < retirement_age
-```
+  - Idade de início do recebimento (mesmo padrão, mesma lógica de gap)
 
----
+  - Modalidade:
+      ui.select(options={
+          'lifetime': 'Renda Vitalícia — pago enquanto você viver',
+          'fixed_term': 'Prazo Certo — você define quantos anos',
+          'lump_sum': 'Pagamento Único — recebe tudo de uma vez'
+      }).bind_value(state, 'private_pension_modality')
+      + tooltips explicativos para cada opção
 
-### Prompt 16 — Seção: Previdência Privada
+  - Prazo em anos (visível apenas se modality == 'fixed_term'):
+      ui.number(label='Prazo (anos)', min=1, max=40)
+      .bind_value(state, 'private_pension_term_years')
+      .bind_visibility_from(state, 'private_pension_modality',
+                            value='fixed_term')
 
-```
-No /frontend/src/features/simulation/components do SimulaRenda, crie o componente PrivatePensionSection:
+  - Toggle "Valor em reais de hoje?"
 
-Estrutura análoga ao PublicPensionSection com toggle de habilitação.
+  Mini-timeline (visível quando AMBAS as pensões estão habilitadas):
+    Exibe os dois start_ages em sequência visual mostrando qual começa primeiro.
+    Exemplo: "Prev. Privada (60 anos) → INSS (65 anos)"
 
-Campos (quando habilitado):
-1. Valor mensal esperado do benefício (R$) — CurrencyInput
-   Tooltip: "Consulte sua seguradora ou banco. Use o valor em reais de hoje ou o projetado?"
-2. Idade de início do recebimento — SliderInput, min=retirement_age, max=80
-   Mesmo alerta de gap do PublicPensionSection
-3. Modalidade — Select com opções:
-   - "Renda Vitalícia" (value: lifetime) — Tooltip: "Você recebe até falecer. Sem herança."
-   - "Prazo Certo" (value: fixed_term) — Tooltip: "Você define quantos anos receberá."
-   - "Pagamento Único" (value: lump_sum) — Tooltip: "Recebe tudo de uma vez e gerencia você mesmo."
-4. Prazo (anos) — NumberInput, visível apenas se modalidade = fixed_term, min=1, max=40
-5. Toggle "O valor já está em reais de hoje?" (default: Sim)
-
-Comportamento adicional:
-- Se ambas as pensões estiverem habilitadas e tiverem start_age diferentes, exibir mini-timeline abaixo da seção mostrando as duas datas e o gap
-
-Escreva testes para: visibilidade condicional do campo de prazo, mini-timeline com duas pensões, alerta de gap individual por pensão
+Testes:
+- Campo de prazo visível apenas com fixed_term
+- Mini-timeline aparece apenas quando ambos habilitados
+- Mini-timeline ordena corretamente qualquer combinação de start_ages
 ```
 
 ---
 
-### Prompt 17 — Seção: Parâmetros Econômicos (Colapsável)
+### Prompt 11 — Seção: Parâmetros Econômicos
 
 ```
-No /frontend/src/features/simulation/components do SimulaRenda, crie o componente EconomicParametersSection:
+Em build_simulation_form() do SimulaRenda, adicione a seção de parâmetros econômicos.
 
-Seção colapsada por padrão com cabeçalho "⚙️ Parâmetros econômicos avançados" e botão expand.
-Ao expandir com animação suave (max-height transition).
+Seção 5 — "Parâmetros Econômicos Avançados" (colapsada por padrão):
 
-Campos:
-1. Inflação anual projetada — PercentageInput, default=4.5%, min=0%, max=20%
-   Benchmark: "Meta do Banco Central: 3,0% para 2026"
-   Tooltip: "Taxa de inflação esperada ao ano. Usada para corrigir o poder de compra da sua renda futura."
+  ui.expansion("⚙️ Parâmetros econômicos avançados", value=False):
 
-2. Rendimento anual real — PercentageInput, default=6.0%, min=0%, max=30%
-   Benchmark: "Tesouro IPCA+ 2035: ~6,2% real a.a."
-   Tooltip: "Retorno dos seus investimentos descontada a inflação. Para carteiras conservadoras use 4–5%. Moderadas: 6–7%. Arrojadas: 8–10%."
+    - Inflação anual projetada (%):
+        ui.number(label='Inflação anual', suffix='% a.a.', min=0, max=20,
+                  step=0.1, value=4.5)
+        bind a state.inflation_rate com conversão /100 no getter e *100 no setter
+        + ui.badge("Meta Banco Central 2026: 3,0%", color='green')
+        + ui.tooltip("Taxa de inflação esperada ao ano...")
 
-3. Taxa de retirada segura — PercentageInput, default=4.0%, min=1%, max=10%
-   Benchmark: "Regra dos 4% (Estudo Trinity, EUA)"
-   Tooltip: "Percentual do patrimônio que você pode retirar anualmente sem risco de esgotá-lo. 4% é o padrão internacional. Para maior segurança, use 3,5% ou 3%."
+    - Rendimento anual real (%):
+        ui.number(label='Rendimento real', suffix='% a.a.', min=0, max=30,
+                  step=0.1, value=6.0)
+        + ui.badge("Tesouro IPCA+ 2035: ~6,2% a.a.", color='teal')
+        + ui.tooltip("Retorno dos investimentos descontada a inflação...")
 
-Botão "Restaurar padrões" que reseta os três campos para os valores padrão.
+    - Taxa de retirada segura (%):
+        ui.number(label='Taxa de retirada', suffix='% a.a.', min=1, max=10,
+                  step=0.5, value=4.0)
+        + ui.badge("Regra dos 4% (Estudo Trinity, EUA)", color='blue')
+        + ui.tooltip("% do patrimônio que pode ser retirado anualmente...")
 
-Escreva testes para: estado expandido/colapsado, restauração de padrões, cálculo correto com valores customizados
-```
+    - Botão "Restaurar padrões":
+        ui.button("Restaurar padrões", icon='restore', on_click=reset_economic_params)
+        reset_economic_params: restaura inflation_rate=0.045, annual_real_return=0.06,
+                                safe_withdrawal_rate=0.04 e chama on_change
 
----
-
-### Prompt 18 — Orquestrador do Formulário Completo
-
-```
-No /frontend/src/features/simulation do SimulaRenda, crie o componente SimulationForm:
-
-Orquestra todas as seções em ordem:
-1. <CurrentSituationSection />
-2. <IndependenceGoalsSection />
-3. <PublicPensionSection />
-4. <PrivatePensionSection />
-5. <EconomicParametersSection />
-
-Comportamento:
-- Usa react-hook-form no nível raiz com schema zod unificado
-- onChange de qualquer campo dispara recálculo via useSimulationCalculator (hook customizado)
-- useSimulationCalculator: debounce de 300ms, chama POST /api/v1/simulations/calculate, atualiza useSimulationStore.results
-- Loading state durante o cálculo: cards de resultado mostram skeleton
-- Erro de API: toast de erro não intrusivo
-
-Botões no rodapé do formulário:
-- "Salvar simulação" (primary): abre modal de nome se não tiver nome, então POST /simulations se autenticado, ou persiste em localStorage se não
-- "Limpar" (ghost): reset do form com confirmação
-- "Compartilhar" (outline): só visível se simulação salva
-
-Barra de progresso no topo do formulário mostrando % de campos preenchidos
-
-Escreva testes de integração mockando a API: fluxo completo de preenchimento → cálculo → exibição de resultados
+Testes:
+- Restaurar padrões redefine os três campos
+- Conversão %↔decimal correta (4.5 exibido = 0.045 no state)
+- on_change chamado após restaurar
 ```
 
 ---
 
-## FASE 3 — Painel de Resultados e Gráficos (Prompts 19–28)
-
----
-
-### Prompt 19 — Componente: ResultCard
+### Prompt 12 — Integração do Formulário com a Engine
 
 ```
-No /frontend/src/features/simulation/components do SimulaRenda, crie o componente ResultCard:
+Em /backend/app/ui/pages/home.py do SimulaRenda, integre o formulário
+completo com a engine de cálculo, criando o loop reativo principal.
 
-Props:
-- label: string
-- value: string | number
-- format?: 'currency' | 'percentage' | 'text' (default 'currency')
-- variant?: 'default' | 'highlight' | 'success' | 'warning' | 'danger'
-- hint?: string
-- isLoading?: boolean
-- trend?: { value: number, label: string } (ex: "+R$ 50.000 vs simulação anterior")
+Implemente a função recalculate(state: SimulationState):
+  1. Verifica state.is_valid() → se inválido, state.results = None; retorna
+  2. Converte state para SimulationParameters usando state.to_parameters_dict()
+  3. Chama calculator.run_full_simulation(params) diretamente (sem HTTP)
+  4. state.results = results (dict serializado do SimulationResults)
+  5. state.is_dirty = True
 
-Comportamento:
-- variant='highlight': card maior com valor em fonte grande (destaque para patrimônio necessário)
-- isLoading: exibe skeleton animado no lugar do valor
-- trend: exibe badge com seta ↑↓ e valor da diferença
-- Valor monetário formatado em pt-BR com abreviação para milhões (ex: R$ 1,5M)
+Na página home_page():
+  - Instancia SimulationState() por sessão (via app.storage.user ou variável local)
+  - Chama recalculate(state) ao inicializar (com valores padrão)
+  - Passa on_change=lambda: recalculate(state) para build_simulation_form()
 
-Escreva testes para: formatação de valores, variantes de cor, estado de loading, exibição de trend
-```
+Layout da página:
+  Desktop (lg: duas colunas via ui.row):
+    Coluna esquerda (45%): formulário com scroll
+    Coluna direita (55%): painel de resultados (sticky — próximos prompts)
 
----
+  Mobile (< 768px, via classes responsivas do Quasar/NiceGUI):
+    Coluna única: formulário → resultados → gráficos
 
-### Prompt 20 — Grid de Cards de Resultados
+Estado inicial sem dados:
+  Se state.results é None:
+    Coluna de resultados exibe: ui.icon("insights") + label "Preencha os campos
+    ao lado para ver sua projeção de independência financeira"
 
-```
-No /frontend/src/features/simulation/components do SimulaRenda, crie o componente ResultsSummary:
-
-Recebe SimulationResults do useSimulationStore.
-
-Layout: grid responsivo (2 colunas mobile, 3 colunas desktop)
-
-Cards a exibir:
-1. "Patrimônio Necessário" — variant=highlight, valor=required_patrimony
-2. "Patrimônio Projetado" — variant baseado em feasibility_status
-3. "Aporte Mensal Necessário" — variant=default, valor=required_monthly_contribution
-4. "Rendimento Anual Real" — format=percentage
-5. "Inflação Projetada" — format=percentage
-6. "Diferença (Gap)" — variant=danger se gap>0, variant=success se gap<=0, valor=patrimony_gap com sinal
-
-Banner de status de viabilidade acima dos cards:
-- viable: "✅ Seu plano é viável! Com os aportes atuais você atinge a independência financeira."
-- warning: "⚠️ Plano com ajuste necessário. Você atingirá 80–100% do objetivo."
-- unviable: "❌ Plano inviável com os parâmetros atuais. Veja sugestões abaixo."
-
-Sugestões automáticas (quando warning ou unviable):
-- "Aumentar o aporte mensal em R$ X chegaria ao objetivo"
-- "Postergar a aposentadoria X anos resolveria o gap"
-- "Reduzir a renda desejada em R$ Y tornaria o plano viável"
-
-Escreva testes para: exibição correta por status, sugestões calculadas corretamente, responsividade
+Testes E2E em e2e/test_home.py:
+- Página carrega sem erro
+- Preencher aporte mensal dispara recálculo (results não None após interação)
+- Layout de duas colunas em viewport 1280px
+- Layout de coluna única em viewport 390px
 ```
 
 ---
 
-### Prompt 21 — Timeline de Eventos Previdenciários
+### Prompt 13 — Painel de Resultados: Cards e Banner de Viabilidade
 
 ```
-No /frontend/src/features/simulation/components do SimulaRenda, crie o componente PensionTimeline:
+Em /backend/app/ui/components/results_panel.py do SimulaRenda, implemente
+o painel de resultados que exibe os cálculos em tempo real.
 
-Recebe: SimulationResults.phases e SimulationParameters
+Função build_results_panel(state: SimulationState):
+  Decorada com @ui.refreshable para re-renderizar quando state.results muda.
 
-Renderiza uma linha do tempo horizontal com os eventos:
-- [Hoje] → [Parar de trabalhar] → [Início Prev. Privada?] → [Início INSS?] → [Expectativa de vida]
-  (a ordem dos dois benefícios depende dos start_ages)
+  Se state.results is None:
+    Exibe estado vazio (ícone + mensagem)
+    Retorna
 
-Para cada segmento entre eventos, exibir:
-- Rótulo da fase (ex: "Só patrimônio", "Patrimônio + Prev. Privada", "Patrimônio + INSS + Prev.")
-- Duração em anos
-- Renda mensal disponível no período
-- Cor de fundo: vermelho claro para fases sem benefícios, amarelo para fases parciais, verde para fase com todos os benefícios
+  Banner de viabilidade (acima dos cards):
+    viable:  ui.banner com icon='check_circle', color='positive'
+             "✅ Plano viável! Com os aportes atuais você atinge a independência."
+    warning: ui.banner com icon='warning', color='warning'
+             "⚠️ Plano com ajuste necessário. Você atingirá 80–100% do objetivo."
+    unviable: ui.banner com icon='error', color='negative'
+             "❌ Plano inviável com os parâmetros atuais."
 
-Cada evento é um marcador com ícone, rótulo e data/idade
+  Grid de 6 cards (ui.grid(columns=3) no desktop, columns=2 no mobile):
+    1. "Patrimônio Necessário"   — valor grande, destaque
+    2. "Patrimônio Projetado"    — cor conforme feasibility_status
+    3. "Aporte Mensal Necessário"
+    4. "Diferença (Gap)"         — verde se negativo (sobra), vermelho se positivo (falta)
+    5. "Rendimento Anual Real"   — formato percentual
+    6. "Inflação Projetada"      — formato percentual
 
-Em mobile: timeline vertical
+  Cada card: ui.card > ui.card_section com:
+    ui.label(label).classes('text-caption text-grey')
+    ui.label(valor_formatado).classes('text-h5 text-weight-bold')
 
-Alerta destacado se houver gap (período entre parar de trabalhar e início do primeiro benefício):
-"Atenção: você terá X anos sem nenhum benefício previdenciário. Seu patrimônio precisa cobrir R$ Y/mês neste período."
+  Valores monetários formatados como "R$ 1,5M" (abreviação para ≥ 1.000.000)
+  e "R$ 850.000" para menores.
 
-Escreva testes para: renderização com 0, 1 e 2 benefícios, cálculo correto do alerta de gap, ordenação correta dos eventos por start_age
-```
+  Sugestões automáticas (se warning ou unviable):
+    ui.expansion("💡 Sugestões para viabilizar o plano"):
+      - "Aumentar o aporte mensal em R$ X atingiria o objetivo"
+      - "Postergar a aposentadoria X anos resolveria o gap"
+      (calculados a partir dos results)
 
----
-
-### Prompt 22 — Gráfico: Evolução Patrimonial
-
-```
-No /frontend/src/features/simulation/components/charts do SimulaRenda, crie o componente PatrimonyChart usando Recharts:
-
-Dados: SimulationResults.projection_series (age, patrimony)
-
-Tipo: ComposedChart com:
-- Area para fase de acumulação (até retirement_age): fill teal com gradiente
-- Line para fase de retirada (após retirement_age): linha sólida teal
-- ReferenceLine vertical em retirement_age: "Parar de trabalhar" com label
-- ReferenceLine vertical em public_pension.start_age (se habilitado): "Início INSS"
-- ReferenceLine vertical em private_pension.start_age (se habilitado): "Início Prev. Privada"
-- ReferenceLine horizontal em required_patrimony: "Patrimônio necessário" linha pontilhada vermelha
-- Área sombreada em vermelho onde patrimony < required_patrimony
-
-Eixos:
-- X: idade (18 a life_expectancy)
-- Y: valores em R$ com abreviação (K, M)
-
-Tooltip customizado no hover:
-- Idade: X anos
-- Patrimônio: R$ X.XXX.XXX
-- Fase atual: [nome da fase]
-- Renda disponível: R$ X.XXX/mês
-
-Controles:
-- Botão "Exportar PNG" usando html2canvas
-- Toggle "Mostrar em valores reais (ajustado pela inflação)"
-
-Escreva testes: renderiza sem crashar com dados válidos, tooltip exibe dados corretos, toggle de inflação muda os valores do eixo Y
+Testes:
+- Banner correto para cada feasibility_status
+- Card de gap verde quando negativo, vermelho quando positivo
+- Formatação "R$ 1,5M" para 1.500.000
+- Sugestões aparecem para warning e unviable, não para viable
 ```
 
 ---
 
-### Prompt 23 — Gráfico: Composição da Renda por Fase
+### Prompt 14 — Timeline de Eventos e Gráficos Plotly
 
 ```
-No /frontend/src/features/simulation/components/charts do SimulaRenda, crie o componente IncomeCompositionChart usando Recharts:
+Em /backend/app/ui/components/ do SimulaRenda, implemente a timeline e
+os dois gráficos Plotly.
 
-Dados: SimulationResults.phases
+1. pension_timeline.py — build_pension_timeline(state: SimulationState):
+   @ui.refreshable, renderiza com base em state.results.
 
-Tipo: BarChart empilhado (stacked) com uma barra por fase
+   Timeline horizontal usando ui.stepper ou HTML customizado via ui.html:
+   [Hoje] → [Parar de trabalhar] → [Benefício 1] → [Benefício 2] → [Expectativa de vida]
+   (ordem dos benefícios determinada pelos start_ages)
 
-Barras empilhadas:
-- "Retirada do Patrimônio" — cor teal
-- "INSS / Aposentadoria Pública" — cor azul (se habilitado)
-- "Previdência Privada" — cor violeta (se habilitado)
+   Para cada segmento: rótulo da fase, duração, renda disponível, cor de fundo:
+   - Sem benefício: fundo laranja claro
+   - Um benefício: fundo amarelo claro
+   - Todos os benefícios: fundo verde claro
 
-Eixo X: rótulo da fase (ex: "55–60 anos")
-Eixo Y: R$/mês com abreviação
+   Alerta de gap se phases[0].sources == ["patrimony"] e duração > 0:
+     ui.card(color='warning'): "⚠️ Gap de X anos sem benefício previdenciário..."
 
-ReferenceLine horizontal em desired_monthly_income: "Renda desejada" com linha pontilhada
+2. patrimony_chart.py — build_patrimony_chart(state: SimulationState):
+   @ui.refreshable, usa ui.plotly.
 
-Tooltip: detalha cada fonte de renda e o total
+   Constrói figura Plotly com:
+   - Trace Area: pontos de acumulação (até retirement_age), fill='tozeroy', cor teal
+   - Trace Line: pontos de retirada (após retirement_age), cor teal mais escuro
+   - Linha vertical pontilhada em retirement_age ("Parar de trabalhar")
+   - Linha vertical pontilhada em public_pension.start_age (se habilitado)
+   - Linha vertical pontilhada em private_pension.start_age (se habilitado)
+   - Linha horizontal pontilhada em required_patrimony ("Patrimônio necessário")
+   - Layout: bg branco, eixo X = "Idade", eixo Y = "Patrimônio (R$)"
+   - Tooltip: age, patrimony formatado, fase atual
 
-Legenda clicável para mostrar/ocultar cada série
+3. income_chart.py — build_income_chart(state: SimulationState):
+   @ui.refreshable, usa ui.plotly.
 
-Escreva testes: empilhamento correto das barras, referência na renda desejada, legenda interativa
-```
+   Bar chart empilhado com uma barra por fase:
+   - Stack 1: "Retirada do Patrimônio" (teal)
+   - Stack 2: "INSS / Aposent. Pública" (azul, se habilitado)
+   - Stack 3: "Previdência Privada" (violeta, se habilitado)
+   - Linha horizontal: desired_monthly_income ("Renda desejada")
+   - Eixo X: rótulo da fase ("55–60 anos")
+   - Eixo Y: R$/mês
 
----
+Integre os três componentes na home_page() abaixo do painel de resultados.
 
-### Prompt 24 — Layout do Painel Principal (Desktop e Mobile)
-
-```
-No /frontend/src/pages do SimulaRenda, crie a HomePage:
-
-Layout Desktop (lg: breakpoint):
-- Grid 2 colunas: 45% formulário | 55% resultados
-- Formulário: coluna esquerda com scroll independente
-- Resultados: coluna direita sticky (acompanha o scroll do formulário)
-- Ordem: ResultsSummary → PensionTimeline → PatrimonyChart → IncomeCompositionChart
-
-Layout Mobile:
-- Coluna única
-- Formulário completo
-- Após formulário: ResultsSummary → PensionTimeline
-- Gráficos em seção colapsável "📊 Ver projeção detalhada"
-
-Header da página:
-- Logo "SimulaRenda" à esquerda
-- Botão "Minhas Simulações" e avatar/login à direita
-- Em mobile: menu hambúrguer
-
-Estado inicial (sem dados):
-- Painel de resultados exibe ilustração e texto: "Preencha os campos ao lado para ver sua projeção de independência financeira"
-
-Escreva testes para: layout desktop com dados, layout mobile com dados, estado inicial sem dados
+Testes E2E:
+- Gráfico SVG presente no DOM após preenchimento do formulário
+- Timeline exibe número correto de segmentos conforme benefícios habilitados
+- Alerta de gap aparece e desaparece corretamente
 ```
 
 ---
 
-### Prompt 25 — Componente: SimulationNameModal
+## FASE 3 — Autenticação e Persistência (Prompts 15–21)
+
+---
+
+### Prompt 15 — Páginas de Login e Cadastro
 
 ```
-No /frontend/src/features/simulation/components do SimulaRenda, crie o componente SimulationNameModal:
+Em /backend/app/ui/pages/ do SimulaRenda, implemente login.py e register.py.
 
-Props:
-- isOpen: boolean
-- defaultName?: string
-- onSave: (name: string) => void
-- onCancel: () => void
-- isSaving?: boolean
+login.py — @ui.page('/entrar'):
+  Card centralizado com:
+  - ui.input label='Email', type='email' com validação
+  - ui.input label='Senha', type='password' com validação
+  - ui.checkbox "Lembrar de mim" (controla duração da sessão)
+  - ui.button "Entrar" → chama auth_service.login() →
+      sucesso: app.storage.user['user_id'] = id; app.storage.user['user_name'] = name
+               migrar simulações locais → redirect para '/' ou rota de origem
+      erro: ui.notify(mensagem_erro, type='negative')
+  - ui.button "Entrar com Google" (OAuth — abre ui.open para URL do Google)
+  - ui.link "Esqueci minha senha" → '/esqueci-senha'
+  - ui.link "Criar conta" → '/cadastrar'
 
-Comportamento:
-- Modal com backdrop blur
-- Input de nome com foco automático ao abrir
-- Enter no input dispara onSave
-- Nome padrão sugerido: "Simulação — [data atual]" ex: "Simulação — Jun 2026"
-- Validação: nome não vazio, max 100 caracteres
-- Botão "Salvar" com spinner quando isSaving=true
-- Fecha no Escape ou clique fora (se não isSaving)
+register.py — @ui.page('/cadastrar'):
+  Card centralizado com:
+  - ui.input "Nome completo"
+  - ui.input "Email"
+  - ui.input "Senha" (mínimo 8 caracteres)
+  - ui.input "Confirmar senha" + validação de igualdade
+  - ui.button "Cadastrar" → auth_service.register() →
+      sucesso: mesmo fluxo do login (set storage + migrar + redirect)
+      erro: ui.notify
+  - ui.button "Cadastrar com Google"
+  - ui.link "Já tenho conta" → '/entrar'
 
-Escreva testes: foco automático, submit com Enter, validação de nome vazio, estado de loading
+Função migrate_local_simulations(user_id: str):
+  - Lê app.storage.user.get('local_simulations', [])
+  - Para cada uma: POST /api/v1/simulations via httpx (com token do usuário)
+  - Limpa app.storage.user['local_simulations'] = []
+  - ui.notify(f"{n} simulações migradas para sua conta")
+
+Testes E2E:
+- Login com credenciais corretas → redireciona para /
+- Login com senha errada → notificação de erro visível
+- Cadastro com emails diferentes → notificação de erro
+- Após login, header mostra avatar e "Minhas Simulações"
 ```
 
 ---
 
-### Prompt 26 — Hook: useSimulationCalculator
+### Prompt 16 — Salvar Simulação com Dialog de Nome
 
 ```
-No /frontend/src/features/simulation/hooks do SimulaRenda, crie o hook useSimulationCalculator:
+Em /backend/app/ui/pages/home.py do SimulaRenda, implemente o fluxo de
+salvar simulação.
 
-Interface:
-const { results, isCalculating, error, calculate } = useSimulationCalculator()
+Botão "Salvar Simulação" no rodapé do formulário (habilitado quando form é válido):
 
-Comportamento:
-- calculate(params: SimulationParameters): void
-- Debounce de 300ms: múltiplas chamadas rápidas disparam apenas uma requisição
-- Durante cálculo: isCalculating=true
-- Sucesso: atualiza useSimulationStore.results, isCalculating=false
-- Erro de validação (422): error com mensagem amigável, isCalculating=false
-- Erro de rede: error="Não foi possível calcular. Verifique sua conexão."
-- Cancela requisição pendente se nova chamada chegar antes do debounce (AbortController)
+Fluxo (usuário autenticado — app.storage.user.get('user_id') is not None):
+  1. Se state.saved_simulation_name is None:
+     Abre ui.dialog com:
+       ui.input label='Nome da simulação',
+                value=f"Simulação — {datetime.now().strftime('%b %Y')}",
+                on_keydown Enter → confirmar
+       ui.button "Salvar" + ui.button "Cancelar"
+  2. POST /api/v1/simulations via httpx com token do usuário
+     Body: {name, parameters: state.to_parameters_dict()}
+  3. Sucesso: state.saved_simulation_id = id; state.is_dirty = False
+              ui.notify("Simulação salva!", type='positive')
+  4. Erro: ui.notify("Erro ao salvar. Tente novamente.", type='negative')
 
-Também exporta: calculateSync(params) → SimulationResults
-(versão síncrona para uso nos testes de cálculo, sem chamada de API)
+Fluxo (usuário não autenticado):
+  1. Verifica len(app.storage.user.get('local_simulations', [])):
+     < 4: salva diretamente com ui.notify de aviso
+     == 4: salva + ui.notify "Você tem espaço para mais 1 simulação local..."
+     == 5: ui.dialog bloqueante "Limite de simulações locais atingido.
+           Crie uma conta gratuita ou exclua uma simulação existente."
+           Botões: "Criar conta" → '/cadastrar' | "Ver minhas simulações" → '/minhas-simulacoes'
 
-Escreva testes:
-- Debounce: 3 chamadas em 100ms disparam só 1 requisição
-- Cancelamento de requisição anterior
-- Atualização correta do store após sucesso
-- Mensagem de erro correta para 422 vs erro de rede
-```
+Botão "Limpar" com ui.dialog de confirmação antes de resetar state.
 
----
+Indicador is_dirty:
+  Quando state.is_dirty=True e saved_simulation_id is not None:
+    Exibe ui.badge("Não salvo", color='orange') próximo ao botão salvar
 
-### Prompt 27 — Exportação PDF do Relatório
-
-```
-No /frontend/src/features/simulation/services do SimulaRenda, crie o serviço generateSimulationPDF:
-
-Tecnologia: @react-pdf/renderer (instale a dependência)
-
-Conteúdo do PDF gerado:
-- Cabeçalho: logo SimulaRenda, data de geração, nome da simulação
-- Seção 1 — Resumo dos Parâmetros: tabela 2 colunas com todos os inputs
-- Seção 2 — Resultados: cards principais (patrimônio necessário, projetado, gap, status)
-- Seção 3 — Linha do Tempo: versão textual da PensionTimeline com fases e rendas
-- Seção 4 — Tabela de Projeção: tabela com colunas Idade | Patrimônio | Fase | Renda/mês (a cada 5 anos)
-- Rodapé: disclaimer "Este simulador tem fins educacionais e não constitui aconselhamento financeiro."
-
-Botão "📥 Baixar PDF" no componente ResultsSummary que:
-- Exibe loading durante geração
-- Dispara download automático com nome: "SimulaRenda_[nome-simulação]_[data].pdf"
-
-Escreva testes: conteúdo do documento gerado contém os campos esperados, nome do arquivo correto
+Testes E2E:
+- Dialog de nome abre ao clicar salvar sem nome
+- Simulação aparece em /minhas-simulacoes após salvar
+- Limite de 5 locais exibe dialog bloqueante
 ```
 
 ---
 
-### Prompt 28 — Página de Simulação Compartilhada
+### Prompt 17 — Página: Minhas Simulações
 
 ```
-No /frontend/src/pages do SimulaRenda, crie a SharedSimulationPage:
+Em /backend/app/ui/pages/simulations.py do SimulaRenda, implemente a
+página de histórico de simulações.
 
-Rota: /compartilhado/:token
+@ui.page('/minhas-simulacoes'):
+  Redirecionar para '/entrar' se não autenticado.
 
-Comportamento:
-- Ao montar: GET /api/v1/simulations/shared/:token
-- Loading: skeleton do painel de resultados
-- Erro 404: "Esta simulação não existe ou o compartilhamento foi desativado"
-- Sucesso: renderiza ResultsSummary + PensionTimeline + PatrimonyChart em modo read-only
+  Header da página:
+    - Título "Minhas Simulações" + badge com contagem total
+    - ui.button "Nova Simulação" → '/'
+    - ui.input de busca (filtra localmente por nome)
 
-Banner no topo:
-"Você está visualizando a simulação '[nome]' compartilhada por [nome do usuário ou 'alguém'].
-Crie sua própria simulação gratuitamente!"
-CTA: "Simular agora" → /
+  Lista de simulações (GET /api/v1/simulations via httpx):
+    ui.grid de SimulationCards (2 colunas desktop, 1 mobile)
+    Paginação: botão "Carregar mais" (página seguinte da API)
 
-Meta tags OG para preview ao compartilhar no WhatsApp:
-- og:title: "Meu plano de independência financeira — SimulaRenda"
-- og:description: "Patrimônio necessário: R$ X · Idade alvo: X anos · Status: Viável ✅"
-- og:image: imagem estática de preview
+  Estado vazio:
+    ui.icon("savings") + "Você ainda não salvou nenhuma simulação."
+    ui.button "Fazer minha primeira simulação" → '/'
 
-Escreva testes: loading state, exibição de erro 404, dados renderizados corretamente, banner de CTA presente
-```
+  SimulationCard (build_simulation_card em components/simulation_card.py):
+    ui.card clicável → '/simulacao/{id}':
+      - Nome da simulação (ui.label com edição inline ao duplo clique)
+      - Data formatada (ex: "2 jun. 2026")
+      - Badge de status (viable=verde, warning=amarelo, unviable=vermelho)
+      - Dois valores: "Necessário: R$ X" e "Projetado: R$ Y"
+      - ui.linear_progress value=projected/required (clamp 0–1)
+      - Menu kebab (ui.button icon='more_vert' + ui.menu):
+          Renomear: PUT /simulations/{id} {name: novo_nome}
+          Duplicar: POST /simulations com mesmo parameters + "Cópia de " no nome
+          Compartilhar: abre dialog com toggle e URL copiável
+          Excluir: ui.dialog de confirmação → DELETE /simulations/{id}
 
----
+  Modo comparação:
+    ui.button "Comparar" → ativa checkbox em cada card
+    Ao selecionar 2–3 cards: ui.button "Ver comparação (N)" aparece → abre ComparisonDialog
 
-## FASE 4 — Histórico e Comparação (Prompts 29–36)
-
----
-
-### Prompt 29 — Página: Minhas Simulações
-
-```
-No /frontend/src/pages do SimulaRenda, crie a SimulationsPage (rota /minhas-simulacoes, requer auth):
-
-Layout:
-- Header com título "Minhas Simulações" e botão "Nova Simulação" → /
-- Grid de SimulationCards (2 colunas desktop, 1 mobile)
-- Paginação com infinite scroll ou botão "Carregar mais"
-- Barra de busca por nome de simulação (filtra localmente se < 20 itens, senão query na API)
-
-SimulationCard exibe:
-- Nome da simulação (clicável → detalhe)
-- Data de criação formatada
-- Badge de status (viable/warning/unviable) com cor
-- Patrimônio necessário e projetado
-- Mini-barra de progresso: projetado/necessário
-- Menu kebab (três pontos) com: Renomear | Duplicar | Compartilhar | Excluir
-
-Estado vazio (sem simulações): ilustração + "Você ainda não salvou nenhuma simulação. Faça sua primeira simulação!"
-
-Ação Renomear: inline edit no card com save on blur/Enter
-Ação Duplicar: POST /simulations com mesmo parameters e nome "Cópia de [nome]"
-Ação Excluir: confirmação com Dialog antes de DELETE
-
-Escreva testes: renderização de cards, inline rename, confirmação de exclusão, estado vazio
+Testes E2E:
+- Lista carrega com simulações do usuário logado
+- Excluir remove o card da lista
+- Renomear atualiza o nome no card
+- Estado vazio exibido quando lista vazia
 ```
 
 ---
 
-### Prompt 30 — Comparação de Simulações
+### Prompt 18 — Comparação de Simulações
 
 ```
-No /frontend/src/features/simulations/components do SimulaRenda, crie o componente SimulationComparison:
+Em /backend/app/ui/components/ do SimulaRenda, implemente o dialog de
+comparação de simulações.
 
-Ativação: botão "Comparar" na SimulationsPage entra em modo seleção; usuário seleciona 2 ou 3 cards; botão "Ver comparação" abre a tela de comparação.
+comparison_dialog.py — build_comparison_dialog(simulations: list[dict]):
+  ui.dialog fullscreen=True:
 
-Layout da tela de comparação:
-- Tabela com simulações nas colunas e métricas nas linhas
-- Linhas: Nome | Data | Patrimônio Necessário | Patrimônio Projetado | Gap | Aporte Mensal | Idade de Aposentadoria | Status
-- Células com status destacadas pela cor de feasibility
-- Linha de melhor valor em cada métrica destacada em verde
+    Título: "Comparação de Simulações ({n} selecionadas)"
+    ui.button "Fechar" (canto superior direito)
 
-Gráfico sobreposto:
-- PatrimonyChart com uma linha por simulação (cores distintas)
-- Legenda interativa (clica na legenda para mostrar/ocultar linha)
+    Tabela comparativa (ui.table):
+      Colunas: Métrica | Simulação 1 | Simulação 2 | Simulação 3
+      Linhas:
+        Nome, Data, Status (badge colorido),
+        Patrimônio Necessário, Patrimônio Projetado, Gap,
+        Aporte Mensal Necessário, Idade de Aposentadoria,
+        Renda Desejada, Rendimento Real, Inflação
+      Para cada linha de valor numérico:
+        Célula com menor valor em vermelho claro, maior em verde claro
+        (exceto para Gap: menor é melhor)
 
-Botão "Fechar comparação" volta ao modo normal de lista
+    Gráfico Plotly sobreposto (build_comparison_chart):
+      Uma linha por simulação na projection_series
+      Cores distintas: teal, laranja, roxo
+      Legenda clicável (visibleonly ao clicar)
+      Linha horizontal pontilhada para required_patrimony de cada simulação
+      (mesma cor da simulação, tracejado diferente)
 
-Escreva testes: tabela exibe dados corretos, destaque de melhor valor por linha, gráfico sobreposto com N linhas
-```
+Integração em simulations.py:
+  Ao clicar "Ver comparação": carrega detalhes das simulações selecionadas via
+  GET /api/v1/simulations/{id} para cada uma, abre build_comparison_dialog
 
----
-
-### Prompt 31 — Página de Detalhe da Simulação
-
-```
-No /frontend/src/pages do SimulaRenda, crie a SimulationDetailPage (rota /simulacao/:id):
-
-Comportamento:
-- GET /api/v1/simulations/:id ao montar
-- Exibe formulário pre-preenchido com simulation.parameters (modo edição)
-- Painel de resultados com simulation.results
-- Header com: nome da simulação (editável inline), data de criação, botões Salvar | Duplicar | Excluir | Compartilhar
-
-Modo edição:
-- Qualquer alteração no formulário marca isDirty=true
-- Botão "Salvar alterações" (visível quando isDirty) dispara PUT /simulations/:id
-- Aviso "Alterações não salvas" ao tentar navegar para outra rota com isDirty=true (React Router blocker)
-
-Toggle de compartilhamento:
-- "Compartilhar simulação" → POST /simulations/:id/share {enable: true}
-- Exibe URL copiável com botão "Copiar link"
-- "Desativar compartilhamento" → POST /simulations/:id/share {enable: false}
-
-Escreva testes: carregamento de dados, detecção de dirty state, blocker de navegação, toggle de compartilhamento
+Testes E2E:
+- Dialog abre com dados de 2 e de 3 simulações
+- Célula com melhor valor destacada em verde
+- Gráfico renderizado com N linhas
 ```
 
 ---
 
-### Prompt 32 — Persistência Offline (localStorage)
+### Prompt 19 — Página de Detalhe e Edição
 
 ```
-No /frontend/src/services do SimulaRenda, crie o serviço offlineSimulationsService:
+Em /backend/app/ui/pages/simulation_detail.py do SimulaRenda, implemente
+a página de detalhe de uma simulação.
 
-Funções:
-- save(simulation: LocalSimulation): void — máximo 5 simulações (FIFO: remove a mais antiga se cheio)
-- list(): LocalSimulation[]
-- get(id: string): LocalSimulation | null
-- remove(id: string): void
-- clear(): void
-- count(): number
+@ui.page('/simulacao/{id}'):
+  Redirecionar para '/entrar' se não autenticado.
+  GET /api/v1/simulations/{id} → carrega parâmetros e resultados.
+  404: ui.notify + redirect para '/minhas-simulacoes'.
 
-Tipo LocalSimulation:
-- id: string (nanoid)
-- name: string
-- parameters: SimulationParameters
-- results: SimulationResults
-- created_at: string (ISO)
-- is_local: true
+  Header da página:
+    - Nome editável inline (ui.input com save no blur e no Enter)
+      PUT /api/v1/simulations/{id} {name: novo_nome} ao salvar
+    - Data de criação
+    - Botões: "Salvar alterações" (visível quando is_dirty) | "Duplicar" | "Excluir" | "Compartilhar"
 
-Integração no SimulationForm:
-- Se !isAuthenticated e clica "Salvar": salva via offlineSimulationsService
-- Toast informativo: "Simulação salva localmente. Crie uma conta gratuita para não perder suas simulações!"
-- Se count() === 4: "Você tem espaço para mais 1 simulação local. Crie uma conta para salvar ilimitadas."
-- Se count() === 5: modal bloqueante "Limite atingido. Crie uma conta ou exclua uma simulação."
+  Conteúdo: formulário completo pré-preenchido + painel de resultados
+    (reutiliza build_simulation_form e build_results_panel com um SimulationState
+    populado a partir dos parameters salvos)
 
-Migração ao fazer login:
-- useAuthStore.setAuth chama migrateLocalSimulations()
-- migrateLocalSimulations: POST /simulations para cada local simulation; clear() local após sucesso
+  Alterações:
+    Qualquer mudança no formulário → state.is_dirty = True
+    "Salvar alterações" → PUT /api/v1/simulations/{id} {parameters: state.to_parameters_dict()}
+    Backend recalcula results
 
-Escreva testes: limite de 5, remoção FIFO, migração ao login (mock da API), toast correto por quantidade
-```
+  Proteção de navegação:
+    Se state.is_dirty e usuário tentar navegar (ui.navigate):
+    ui.dialog de confirmação "Há alterações não salvas. Deseja sair?"
+    Botões: "Sair sem salvar" | "Salvar e sair" | "Continuar editando"
 
----
+  Toggle de compartilhamento:
+    ui.switch "Compartilhar simulação publicamente"
+    Ao ligar: POST /api/v1/simulations/{id}/share {enable: true}
+              Exibe URL com ui.input readonly + ui.button "Copiar" (ui.clipboard)
+    Ao desligar: POST {enable: false}; esconde URL
 
-### Prompt 33 — Autenticação: Páginas de Login e Cadastro
-
-```
-No /frontend/src/pages do SimulaRenda, crie LoginPage e RegisterPage:
-
-LoginPage (/entrar):
-- Formulário: email + senha + "Lembrar de mim" (checkbox)
-- Botão "Entrar com Google" (OAuth, abre popup)
-- Link "Esqueci minha senha"
-- Link "Criar conta"
-- Após login bem-sucedido: redireciona para a rota de origem (via state do location) ou para /
-
-RegisterPage (/cadastrar):
-- Formulário: nome + email + senha + confirmação de senha
-- Botão "Cadastrar com Google"
-- Link "Já tenho conta"
-- Após cadastro: migra simulações locais (se houver) → redireciona para /
-
-ForgotPasswordPage (/esqueci-senha):
-- Campo email → POST /auth/forgot-password
-- Exibe: "Email enviado! Verifique sua caixa de entrada."
-
-ResetPasswordPage (/redefinir-senha?token=X):
-- Campos: nova senha + confirmação
-- POST /auth/reset-password
-
-Todos com validação zod + react-hook-form.
-Escreva testes: validação de formulários, fluxo de login com redirect, migração de simulações ao cadastrar
+Testes E2E:
+- Campos pré-preenchidos com os parâmetros salvos
+- Alteração ativa o botão "Salvar alterações"
+- Toggle de compartilhamento gera URL copiável
+- Dialog de proteção aparece ao tentar navegar com is_dirty=True
 ```
 
 ---
 
-### Prompt 34 — Notificações e Toasts
+### Prompt 20 — Página de Simulação Compartilhada
 
 ```
-No /frontend/src/components/ui do SimulaRenda, crie o sistema de notificações:
+Em /backend/app/ui/pages/shared.py do SimulaRenda, implemente a página
+de visualização pública.
 
-1. Componente Toast:
-   Props: message, type ('success'|'error'|'warning'|'info'), duration=5000, onDismiss
-   - Posição: canto inferior direito
-   - Animação: slide-in da direita, fade-out ao fechar
-   - Ícone por tipo (lucide-react: CheckCircle, XCircle, AlertTriangle, Info)
-   - Barra de progresso indicando tempo restante
-   - Botão X para fechar manualmente
+@ui.page('/compartilhado/{token}'):
+  Nenhuma autenticação necessária.
+  GET /api/v1/simulations/shared/{token}
 
-2. Hook useToast:
-   const { toast } = useToast()
-   - toast.success("Simulação salva!")
-   - toast.error("Erro ao salvar")
-   - toast.warning("Você está prestes a atingir o limite")
-   - toast.info("Dica: ...")
-   - Fila de até 3 toasts simultâneos (FIFO)
+  Se 404: exibe ui.card centralizado:
+    ui.icon('link_off', size='xl')
+    "Esta simulação não existe ou o compartilhamento foi desativado."
+    ui.button "Criar minha simulação" → '/'
 
-3. Componente ToastContainer: renderizado no root da app via portal
+  Se sucesso:
+    Banner no topo (ui.banner color='info'):
+      "Você está visualizando a simulação '[nome]' compartilhada.
+       Crie a sua gratuitamente!"
+      ui.button "Simular agora" → '/'
 
-Escreva testes: exibição e auto-dismiss, limite de 3, fechamento manual, ícones corretos por tipo
-```
+    Exibe em modo read-only (sem formulário editável):
+      - Tabela de parâmetros (2 colunas: campo | valor)
+      - build_results_panel (read-only, sem botão salvar)
+      - build_pension_timeline
+      - build_patrimony_chart
+      - build_income_chart
 
----
+  Meta tags OG para preview no WhatsApp (via ui.add_head_html):
+    og:title: "Meu plano de independência financeira — SimulaRenda"
+    og:description: "Patrimônio necessário: R$ X · Idade alvo: X anos · Status: ✅ Viável"
 
-### Prompt 35 — Perfil do Usuário
-
-```
-No /frontend/src/pages do SimulaRenda, crie a UserProfilePage (/perfil, requer auth):
-
-Seções:
-1. Dados pessoais: nome (editável), email (somente leitura), data de nascimento (editável — usada para pré-preencher "idade atual" no formulário)
-2. Segurança: "Alterar senha" (formulário inline: senha atual + nova + confirmação)
-3. Simulações: contador de simulações salvas + link para /minhas-simulacoes
-4. Zona de perigo: "Excluir minha conta" com confirmação via modal solicitando digitação do email
-
-Comportamento da exclusão:
-- Modal: "Digite seu email para confirmar a exclusão permanente da sua conta e todas as suas simulações"
-- Input de email deve corresponder ao email da conta
-- DELETE /api/v1/users/me → clearAuth → redireciona para / com toast "Sua conta foi excluída."
-
-Avatar: iniciais do nome em círculo colorido (sem upload de foto no MVP)
-
-Escreva testes: edição de nome, validação de exclusão de conta, pré-preenchimento de idade no formulário com base na data de nascimento
+Testes E2E:
+- Token inválido exibe mensagem de erro e CTA
+- Token válido exibe dados da simulação em modo read-only
+- Formulário NÃO está presente na página (apenas visualização)
+- Banner de CTA presente
 ```
 
 ---
 
-### Prompt 36 — SEO e Meta Tags Dinâmicas
+### Prompt 21 — Exportação PDF
 
 ```
-No /frontend do SimulaRenda, configure SEO e meta tags:
+Em /backend/app/services/ do SimulaRenda, implemente o serviço de
+geração de PDF usando reportlab.
 
-1. Instale react-helmet-async
+pdf_service.py — generate_simulation_pdf(simulation: dict) -> bytes:
+  Retorna bytes do PDF gerado (para envio como download).
 
-2. Crie componente SEO com props: title, description, ogImage?, noIndex?
-   - title: "[título] | SimulaRenda"
-   - Canonical URL automática baseada em window.location
-   - Open Graph: og:title, og:description, og:url, og:image, og:type
-   - Twitter Card: summary_large_image
+  Estrutura do PDF:
+  - Cabeçalho: "SimulaRenda" em destaque + data de geração + nome da simulação
+  - Seção 1 — Parâmetros: tabela 2 colunas (campo | valor), todos os inputs
+  - Seção 2 — Resultados: 6 métricas principais com status de viabilidade em cor
+  - Seção 3 — Fases: tabela com from_age, to_age, fontes de renda, retirada mensal
+  - Seção 4 — Projeção simplificada: tabela a cada 5 anos (idade, patrimônio)
+  - Rodapé: "Este simulador tem fins educacionais e não constitui
+             aconselhamento financeiro."
 
-3. Configure em cada página:
-   - /: "Simule sua independência financeira | SimulaRenda" — description sobre a calculadora
-   - /minhas-simulacoes: noIndex=true (página privada)
-   - /compartilhado/:token: title e description dinâmicos com dados da simulação
+Botão "📥 Baixar PDF" em build_results_panel:
+  ui.button("Baixar PDF", icon='download', on_click=download_pdf)
+  download_pdf():
+    pdf_bytes = generate_simulation_pdf(state.results)
+    ui.download(src=pdf_bytes, filename=f"SimulaRenda_{nome}_{data}.pdf")
 
-4. Crie sitemap.xml estático para as rotas públicas
-
-5. Em vite.config.ts: configure prerender das páginas / e /entrar usando vite-plugin-ssr ou similar para SSG
-
-6. robots.txt:
-   - Allow: /
-   - Disallow: /minhas-simulacoes, /simulacao/, /perfil
-   - Sitemap: https://simularenda.com.br/sitemap.xml
-
-Escreva testes: meta tags corretas por rota, noIndex em rotas privadas
+Testes unitários em tests/test_pdf_service.py:
+- generate_simulation_pdf retorna bytes (len > 0)
+- PDF contém o nome da simulação no conteúdo
+- PDF contém o valor de required_patrimony formatado
+- PDF contém o disclaimer no rodapé
+- Não lança exceção para qualquer combinação válida de parâmetros
 ```
 
 ---
 
-## FASE 5 — Qualidade, Performance e Deploy (Prompts 37–48)
+## FASE 4 — Qualidade e Deploy (Prompts 22–30)
 
 ---
 
-### Prompt 37 — Testes E2E com Playwright
+### Prompt 22 — Testes E2E Completos com Playwright
 
 ```
-No /e2e do SimulaRenda, configure Playwright e crie os testes end-to-end:
+Em /backend/e2e/ do SimulaRenda, configure Playwright e implemente os
+cinco cenários obrigatórios.
 
-Configuração:
-- playwright.config.ts com: baseURL=http://localhost:5173, browsers=[chromium, firefox], screenshots on failure, vídeo on retry
+conftest.py:
+  - fixture page: Page do Playwright com baseURL=http://localhost:8000
+  - fixture authenticated_page: page com login via API (set cookie de sessão)
+  - BROWSER_ARGS: --no-sandbox para CI
 
 Cenário 1 — Fluxo principal sem login:
-- Abre a página inicial
-- Preenche todos os campos do formulário
-- Verifica que os cards de resultado aparecem e têm valores > 0
-- Verifica que a timeline exibe as fases corretas
-- Verifica que o gráfico renderizou (canvas/svg presente)
-- Clica "Salvar" → verifica modal de nome → salva → verifica toast de sucesso
+  test_simulation_flow_unauthenticated:
+  - Acessa /
+  - Preenche: patrimônio=150000, aporte=3000, idade=35
+  - Preenche: renda desejada=10000, aposentadoria=55
+  - Verifica que cards de resultado aparecem com valores > 0
+  - Verifica banner de viabilidade visível
+  - Ativa switch INSS, preenche valor=2500, start_age=65
+  - Verifica que alerta de gap aparece
+  - Clica "Salvar Simulação" → dialog de nome aparece → confirma
+  - Verifica ui.notify de sucesso
 
-Cenário 2 — Cadastro e persistência:
-- Simula sem login
-- Cria conta
-- Verifica migração da simulação local para a conta
-- Acessa /minhas-simulacoes e verifica a simulação
+Cenário 2 — Cadastro e migração:
+  test_register_and_migrate:
+  - Simula sem login (salva 1 simulação local)
+  - Acessa /cadastrar, preenche formulário com email aleatório
+  - Verifica ui.notify "1 simulação migrada"
+  - Acessa /minhas-simulacoes → card da simulação presente
 
 Cenário 3 — Compartilhamento:
-- Abre simulação salva
-- Ativa compartilhamento → copia link
-- Abre o link em aba anônima → verifica que exibe os resultados em modo read-only
+  test_sharing:
+  - Login com credenciais de seed (dev@simularenda.com)
+  - Abre simulação existente
+  - Ativa toggle de compartilhamento → URL aparece
+  - Copia URL, abre em novo contexto sem auth
+  - Verifica banner "Você está visualizando" presente
+  - Verifica formulário NÃO presente
 
-Cenário 4 — Comparação de simulações:
-- Cria 3 simulações com parâmetros diferentes
-- Seleciona todas na lista
-- Abre comparação → verifica tabela e gráfico
+Cenário 4 — Comparação:
+  test_comparison:
+  - Login, vai para /minhas-simulacoes (seed tem ≥ 3 simulações)
+  - Clica "Comparar", seleciona 3 simulações
+  - Clica "Ver comparação"
+  - Verifica tabela presente com 3 colunas de simulação
+  - Verifica gráfico SVG presente
 
-Cenário 5 — Fluxo mobile (viewport 390x844):
-- Repete Cenário 1 em viewport mobile
-- Verifica layout em coluna única
-- Verifica que gráficos são acessíveis
+Cenário 5 — Mobile:
+  test_mobile_flow:
+  - Mesmo que Cenário 1, viewport={"width": 390, "height": 844}
+  - Verifica layout de coluna única (formulário acima, resultados abaixo)
+
+Execute: pytest e2e/ -v --screenshot=only-on-failure
 ```
 
 ---
 
-### Prompt 38 — Testes de Unidade da Engine de Cálculo (Cobertura 100%)
+### Prompt 23 — Segurança da API
 
 ```
-No /backend/tests/test_calculator.py do SimulaRenda, adicione os casos de teste de borda para garantir 100% de cobertura da engine:
+No /backend do SimulaRenda, implemente as medidas de segurança:
 
-Casos de borda a cobrir:
-1. Patrimônio atual já suficiente (required_contribution deve ser 0, não negativo)
-2. Idade de parar de trabalhar = idade atual + 1 (acumulação mínima)
-3. Ambas as pensões com start_age = retirement_age (sem gap em nenhuma)
-4. Expectativa de vida = retirement_age + 1 (usufruto mínimo)
-5. Taxa de retirada = 10% (caso conservador de prazo certo)
-6. Inflação = 0% (sem correção)
-7. Rendimento real = 0% (sem crescimento patrimonial)
-8. Previdência privada com modalidade fixed_term: patrimônio deve sobreviver após encerramento do benefício
-9. Pensão pública com start_age muito posterior (gap de 15+ anos)
-10. Simulação com patrimônio se esgotando antes da expectativa de vida (sinalizar corretamente)
+1. Rate limiting com slowapi:
+   Em app/main.py: adicionar SlowAPIMiddleware
+   Em cada rota: @limiter.limit("10/minute") para login, etc.
 
-Para cada caso, verificar:
-- Sem exceção de divisão por zero ou overflow
-- feasibility_status correto
-- projection_series sem valores negativos (mínimo 0 após esgotamento)
-- phases com from_age/to_age sem sobreposição
+2. Headers de segurança (middleware customizado em app/core/security_headers.py):
+   Para toda resposta, adicionar:
+     X-Content-Type-Options: nosniff
+     X-Frame-Options: SAMEORIGIN
+     Referrer-Policy: strict-origin-when-cross-origin
+     X-XSS-Protection: 1; mode=block
+   Excluir rotas NiceGUI internas (prefixo /_nicegui/)
 
-Configure coverage com pytest-cov:
-pytest --cov=app/services/calculator --cov-report=html --cov-fail-under=100
-```
+3. Sanitização de inputs:
+   Em simulation_service.py antes de persistir:
+     name = name.strip()[:255]
+     name = bleach.clean(name, tags=[], strip=True)  # instale bleach
+   Em auth_service.py:
+     email = email.strip().lower()
 
----
+4. Logs de segurança (estrutlog):
+   Em auth_service.login(): logar IP + email_hash (não o email) + success/failure
+   Após 5 falhas consecutivas do mesmo IP: logar WARNING "possible brute force"
+   NUNCA logar senhas, tokens ou valores financeiros
 
-### Prompt 39 — Rate Limiting e Segurança da API
+5. Endpoint GET /api/v1/health:
+   Retorna:
+     { "status": "healthy"|"degraded",
+       "database": "up"|"down",
+       "redis": "up"|"down",
+       "version": "1.0.0" }
+   HTTP 200 se healthy, 503 se degraded
 
-```
-No /backend do SimulaRenda, implemente segurança e rate limiting:
-
-1. Rate limiting com slowapi (wrapper do Flask-Limiter para FastAPI):
-   - POST /auth/login: 10 req/min por IP
-   - POST /auth/register: 5 req/min por IP
-   - POST /simulations/calculate: 30 req/min por IP
-   - POST /simulations: 20 req/hour por user_id
-   - Resposta 429 com header Retry-After
-
-2. Middleware de segurança:
-   - CORS: apenas origens da lista CORS_ORIGINS no settings
-   - Helmet-like headers: X-Content-Type-Options, X-Frame-Options, X-XSS-Protection, Referrer-Policy
-   - Content-Security-Policy para rotas que retornam HTML
-
-3. Validação de entrada:
-   - Todos os campos string com strip() antes de persistir
-   - Sanitização de name da simulação (remover HTML tags)
-   - share_token gerado com secrets.token_urlsafe(32), não previsível
-
-4. Proteção CSRF: token em cookie httpOnly para rotas mutativas
-
-5. Logs de segurança:
-   - Logar IP + tentativas de login falhas
-   - Alertar (log WARNING) após 5 falhas consecutivas do mesmo IP
-
-Escreva testes: rate limit retorna 429 na 11ª requisição, CORS bloqueia origem não listada, sanitização de XSS no nome da simulação
+Testes:
+- Rate limit retorna 429 na 11ª requisição de login no mesmo minuto
+- Headers de segurança presentes em todas as respostas da API
+- XSS no nome da simulação é sanitizado (ex: '<script>' vira '')
+- /health retorna 503 quando banco está down (mock da sessão)
 ```
 
 ---
 
-### Prompt 40 — Otimização de Performance do Frontend
-
-```
-No /frontend do SimulaRenda, implemente otimizações de performance:
-
-1. Code splitting com React.lazy e Suspense:
-   - SimulationsPage, SimulationDetailPage, SharedSimulationPage carregados sob demanda
-   - Recharts importado dinamicamente (é pesado)
-   - Suspense fallback com skeleton da página
-
-2. Memoização:
-   - ResultsSummary: React.memo, recalcula apenas quando results mudar
-   - PatrimonyChart: React.memo + useMemo para dados do gráfico
-   - Funções de formatação de moeda: useMemo com Intl.NumberFormat
-
-3. Web Worker para cálculos sincronos pesados:
-   - Mova calculateSync para /src/workers/calculator.worker.ts
-   - Use comlink para comunicação tipada
-   - Isso libera a thread principal durante projeções de 70+ anos
-
-4. Otimização de imagens:
-   - Ícones: apenas lucide-react (tree-shaking automático)
-   - Qualquer imagem estática: use WebP com fallback PNG
-
-5. Prefetch de rotas:
-   - Ao hover em "Minhas Simulações", prefetch do chunk da SimulationsPage
-
-6. Bundle analysis:
-   - Configure rollup-plugin-visualizer
-   - Meta: bundle principal < 150KB gzipped (excluindo chunks lazy)
-
-Execute Lighthouse CI e garanta score ≥ 90 em Performance, Acessibilidade e SEO.
-Escreva teste verificando que o bundle principal não excede 150KB.
-```
-
----
-
-### Prompt 41 — Containerização Docker
-
-```
-Na raiz do SimulaRenda, crie os Dockerfiles e docker-compose de produção:
-
-/backend/Dockerfile:
-- FROM python:3.12-slim
-- Multi-stage: builder (instala deps) + runtime (copia apenas o necessário)
-- Usuário não-root
-- HEALTHCHECK via GET /health
-
-/frontend/Dockerfile:
-- Multi-stage: builder (npm run build) + nginx (serve os estáticos)
-- nginx.conf: gzip, cache-control headers, try_files para SPA routing
-- HEALTHCHECK via curl
-
-docker-compose.prod.yml:
-- backend: image build, env_file, depends_on postgres e redis, restart=unless-stopped
-- frontend: image build, porta 80/443
-- postgres: volume persistente, healthcheck
-- redis: volume persistente, password via env, maxmemory 256mb com allkeys-lru
-- nginx-proxy: imagem nginx:alpine como reverse proxy (/ → frontend, /api → backend)
-
-Variáveis de ambiente de produção necessárias documentadas em .env.prod.example
-
-Makefile targets adicionais: docker-build, docker-push, docker-prod-up, docker-prod-down
-
-Escreva smoke test: docker-compose -f docker-compose.prod.yml up -d → GET / retorna 200 → GET /api/v1/health retorna 200
-```
-
----
-
-### Prompt 42 — CI/CD com GitHub Actions
-
-```
-No /.github/workflows do SimulaRenda, crie os pipelines:
-
-ci.yml (trigger: push e PR para main e develop):
-  Jobs em paralelo:
-  - backend-test:
-    - Python 3.12, instala deps, roda pytest com coverage
-    - Falha se coverage < 80%
-    - Upload do relatório de coverage como artefato
-  - frontend-test:
-    - Node 20, instala deps, roda vitest --coverage
-    - Falha se coverage < 70%
-  - frontend-lint:
-    - ESLint + TypeScript check (tsc --noEmit)
-  - e2e (apenas em PRs para main):
-    - Sobe stack com docker-compose
-    - Roda playwright test
-    - Upload screenshots/vídeos de falhas
-
-deploy-staging.yml (trigger: push para develop):
-  - Depende de ci.yml passar
-  - Build das imagens Docker e push para registry
-  - Deploy em ambiente de staging via SSH
-
-deploy-prod.yml (trigger: push de tag v*.*.* para main):
-  - Aprovação manual obrigatória (environment: production com reviewers)
-  - Mesmos steps do staging
-  - Após deploy: smoke test automático nos endpoints principais
-  - Em caso de falha: rollback automático para a imagem anterior
-
-Secrets necessários documentados em DEPLOYMENT.md
-```
-
----
-
-### Prompt 43 — Monitoramento e Observabilidade
+### Prompt 24 — Monitoramento com Prometheus e Sentry
 
 ```
 No /backend do SimulaRenda, configure observabilidade:
 
-1. Structured logging com structlog:
-   - Formato JSON em produção, colorido no desenvolvimento
-   - Cada requisição loga: method, path, status_code, duration_ms, user_id (se autenticado), request_id (UUID gerado por middleware)
-   - Não logar senhas, tokens, dados financeiros sensíveis
+1. Logging estruturado com structlog:
+   Em app/core/logging.py: configure structlog com:
+   - Produção: renderer JSON
+   - Desenvolvimento: renderer colorido
+   - Campos automáticos em toda requisição:
+       request_id (UUID gerado por middleware), method, path,
+       status_code, duration_ms, user_id (se autenticado)
+   - NUNCA incluir: email, name, valores monetários, tokens
 
-2. Métricas com prometheus-fastapi-instrumentator:
-   - GET /metrics (protegido por header X-Metrics-Token)
-   - Métricas customizadas: simulations_calculated_total, simulations_saved_total, calculation_duration_seconds
+2. Métricas Prometheus (prometheus-fastapi-instrumentator):
+   Instale: prometheus-fastapi-instrumentator
+   Em main.py: Instrumentator().instrument(app).expose(app, endpoint='/metrics',
+                                                        include_in_schema=False)
+   Header de proteção: X-Metrics-Token validado em middleware
 
-3. Health check endpoint GET /health:
-   Retorna JSON:
-   {
-     "status": "healthy" | "degraded",
-     "database": "up" | "down",
-     "redis": "up" | "down",
-     "version": "1.0.0"
-   }
-   Status HTTP 200 se healthy, 503 se degraded
+   Métricas customizadas (adicionar em app/core/metrics.py):
+   - simulations_calculated_total (Counter)
+   - simulations_saved_total (Counter)
+   - calculation_duration_seconds (Histogram, buckets=[.01, .05, .1, .25, .5, 1])
 
-4. Sentry para error tracking:
-   - Instale sentry-sdk[fastapi]
-   - Configure SENTRY_DSN no settings
-   - Captura exceções não tratadas com contexto do usuário (apenas user_id, sem dados financeiros)
+3. Sentry:
+   Em app/core/config.py: sentry_dsn: str = ""
+   Em main.py lifespan:
+     if settings.sentry_dsn:
+         import sentry_sdk
+         sentry_sdk.init(dsn=settings.sentry_dsn,
+                         traces_sample_rate=0.1)
 
-5. No frontend:
-   - Web Vitals reporting via web-vitals package → POST /api/v1/metrics/vitals
-   - Sentry para erros de JavaScript
+4. Incrementar métricas nos services:
+   calculator.run_full_simulation: incrementa simulations_calculated_total
+                                   e registra duration no Histogram
+   simulation_service.create: incrementa simulations_saved_total
 
-Escreva testes: /health retorna 200 com DB up, retorna 503 com DB down mockado
+Testes:
+- GET /metrics retorna 403 sem X-Metrics-Token
+- GET /metrics retorna 200 com X-Metrics-Token correto e contém 'simulations_calculated_total'
+- GET /api/v1/health retorna 200 healthy com serviços up
+- GET /api/v1/health retorna 503 com DB mockado como down
 ```
 
 ---
 
-### Prompt 44 — Acessibilidade (WCAG 2.1 AA)
+### Prompt 25 — CI/CD com GitHub Actions
 
 ```
-No /frontend do SimulaRenda, realize auditoria e correções de acessibilidade:
+Em /.github/workflows/ do SimulaRenda, crie os pipelines:
 
-1. Formulário:
-   - Todos os inputs com id e label htmlFor correspondente
-   - Campos obrigatórios com aria-required="true"
-   - Erros de validação com role="alert" e aria-live="polite"
-   - SliderInput com aria-valuemin, aria-valuemax, aria-valuenow, aria-label
+ci.yml (trigger: push e PR para main e develop):
+  Jobs:
+  - test-backend:
+      runs-on: ubuntu-latest
+      services:
+        postgres: {image: postgres:16-alpine, env: POSTGRES_*, ports: 5432}
+        redis: {image: redis:7-alpine, ports: 6379}
+      steps:
+        - checkout
+        - setup-python 3.12
+        - pip install -e ".[dev]"
+        - alembic upgrade head
+        - pytest --cov=app --cov-fail-under=80
+             --cov-report=xml --cov-report=term-missing
+        - upload-artifact: coverage.xml
+      env: (todas as vars do .env.example com valores de teste)
 
-2. Gráficos:
-   - PatrimonyChart: aria-label descrevendo o gráfico, role="img"
-   - Tabela de dados colapsável abaixo de cada gráfico como alternativa acessível (visível apenas para leitores de tela via sr-only + focusable)
+  - lint:
+      steps: ruff check app/ && mypy app/
 
-3. Modal/Dialog:
-   - Focus trap dentro do modal (Tab não sai do modal)
-   - Foco retorna ao elemento disparador ao fechar
-   - aria-modal="true", aria-labelledby apontando para o título
+  - e2e (apenas em PRs para main):
+      services: postgres + redis
+      steps:
+        - pip install -e ".[dev]"
+        - playwright install chromium
+        - uvicorn app.main:app &  (start em background)
+        - sleep 3  (aguarda inicialização)
+        - pytest e2e/ --screenshot=only-on-failure
+        - upload-artifact: screenshots de falha
 
-4. Toast:
-   - role="status" para success/info, role="alert" para error/warning
-   - aria-live="polite" para status, aria-live="assertive" para alert
+deploy-staging.yml (trigger: push para develop):
+  Depende de ci.yml verde
+  Build imagem Docker + push para registry
+  SSH deploy no servidor de staging
+  Smoke test: curl -f https://staging.simularenda.com.br/api/v1/health
 
-5. Timeline:
-   - Implementada como lista ordenada (<ol>) semanticamente
-   - Cada fase com aria-label descritivo
+deploy-prod.yml (trigger: tag v*.*.*):
+  environment: production (requer aprovação manual de reviewer)
+  Mesmos steps de staging
+  Após deploy: smoke test completo
+  Falha: rollback automático para imagem anterior
 
-6. Contraste:
-   - Verificar todos os pares texto/fundo com plugin eslint-plugin-jsx-a11y
-   - Mínimo 4.5:1 para texto normal, 3:1 para texto grande
-
-7. Navegação por teclado:
-   - Todos os elementos interativos alcançáveis por Tab
-   - Nenhum outline removido sem substituto visual
-
-Execute axe-core via jest-axe em todos os componentes e corrija todos os violations.
-```
-
----
-
-### Prompt 45 — Internacionalização Futura (i18n Ready)
-
-```
-No /frontend do SimulaRenda, prepare a base para internacionalização sem implementar múltiplos idiomas no MVP:
-
-1. Instale i18next + react-i18next
-
-2. Crie /src/locales/pt-BR/translation.json com TODAS as strings da aplicação organizadas por namespace:
-   {
-     "common": { "save": "Salvar", "cancel": "Cancelar", ... },
-     "simulation": { "form": {...}, "results": {...} },
-     "auth": { "login": {...}, "register": {...} },
-     "errors": { "required": "Campo obrigatório", ... }
-   }
-
-3. Substitua TODOS os textos hardcoded nos componentes por chamadas t('namespace.key')
-
-4. Formatação de moeda via Intl.NumberFormat configurada em hook useCurrency que respeita o locale atual
-
-5. Formatação de datas via date-fns com locale pt-BR
-
-6. Crie script /scripts/check-i18n.ts que:
-   - Varre todos os componentes TSX
-   - Detecta strings hardcoded que NÃO sejam variáveis, props ou valores técnicos
-   - Reporta como warning no CI
-
-Escreva testes: todas as keys do translation.json são usadas em pelo menos um componente (sem keys órfãs); todos os textos visíveis nos snapshots passam pelo t()
+Makefile targets:
+  ci-local: docker-compose up -d postgres redis && pytest && ruff check . && mypy app/
 ```
 
 ---
 
-### Prompt 46 — Documentação da API (OpenAPI/Swagger)
+### Prompt 26 — Dockerfile de Produção e Nginx Final
 
 ```
-No /backend do SimulaRenda, configure documentação interativa da API:
+No SimulaRenda, finalize os arquivos de produção:
 
-1. FastAPI já gera OpenAPI automaticamente. Enriqueça com:
-   - Descrição de cada endpoint (docstring + summary + description)
-   - Exemplos de request/response em cada schema Pydantic usando model_config com json_schema_extra
-   - Tags organizando endpoints: Authentication, Simulations, Users, Health
-   - Respostas de erro documentadas (400, 401, 403, 404, 422, 429, 500)
+backend/Dockerfile (multi-stage):
+  FROM python:3.12-slim AS builder
+  WORKDIR /build
+  COPY pyproject.toml .
+  RUN pip install --user -e ".[dev]"
 
-2. Customize o Swagger UI em /docs:
-   - Título: "SimulaRenda API"
-   - Logo: /static/logo.png
-   - Autenticação via Bearer Token configurada no Swagger (botão Authorize)
+  FROM python:3.12-slim AS runtime
+  WORKDIR /app
+  COPY --from=builder /root/.local /root/.local
+  COPY . .
+  RUN useradd -m -u 1000 appuser && chown -R appuser /app
+  USER appuser
+  ENV PATH=/root/.local/bin:$PATH
+  EXPOSE 8000
+  HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+    CMD curl -f http://localhost:8000/api/v1/health || exit 1
+  CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000",
+       "--workers", "1"]
+  # workers=1 obrigatório para NiceGUI (estado de sessão não é compartilhado entre workers)
 
-3. Crie /docs/api-examples.md com:
-   - Exemplos de curl para os fluxos principais
-   - Exemplo de integração Python com httpx
-   - Exemplo de integração JavaScript com fetch
+nginx.conf (produção completa):
+  - HTTPS com certificado Let's Encrypt (certbot)
+  - Redirect HTTP → HTTPS
+  - Headers de segurança: HSTS, X-Frame-Options, etc.
+  - Bloco WebSocket OBRIGATÓRIO (proxy_set_header Upgrade, Connection "upgrade")
+  - proxy_read_timeout 86400 (evita timeout de sessões longas)
+  - Gzip para respostas text/html, application/json
+  - Cache de assets estáticos do NiceGUI: /_nicegui/static/ com Cache-Control 1 ano
 
-4. Endpoint GET /api/v1/openapi.json retorna o schema completo
+docker-compose.prod.yml final com 4 serviços:
+  postgres (volume persistente + healthcheck)
+  redis (senha via env + maxmemory + healthcheck)
+  backend (imagem buildada, env_file, restart=unless-stopped)
+  nginx (imagem alpine, volumes de cert e conf, depends_on backend)
 
-5. No README.md do /backend, adicione seção "Desenvolvimento" com:
-   - Como rodar localmente
-   - Como rodar os testes
-   - Link para a documentação interativa
+scripts/smoke_test.sh BASE_URL:
+  Verificações após deploy:
+  ✓ GET $BASE_URL/ → 200 (NiceGUI carrega)
+  ✓ GET $BASE_URL/api/v1/health → 200 e status=healthy
+  ✓ POST $BASE_URL/api/v1/simulations/calculate → 200 com required_patrimony > 0
+  ✓ POST $BASE_URL/api/v1/auth/login (credenciais erradas) → 401
+  ✓ GET $BASE_URL/api/v1/simulations (sem token) → 401
+  ✓ GET $BASE_URL/api/v1/simulations/shared/token-invalido → 404
 
-Escreva testes: GET /docs retorna 200; GET /openapi.json retorna schema válido com todos os endpoints documentados
-```
-
----
-
-### Prompt 47 — Seed de Dados e Ambiente de Desenvolvimento
-
-```
-No /backend do SimulaRenda, crie scripts de seed e fixtures para desenvolvimento:
-
-1. /backend/scripts/seed_dev.py:
-   Cria dados de desenvolvimento ao rodar python scripts/seed_dev.py:
-   - 3 usuários de teste com senhas conhecidas:
-     dev@simularenda.com / senha: Dev@12345
-     usuario@teste.com / senha: Teste@123
-     admin@simularenda.com / senha: Admin@123
-   - 5 simulações variadas para cada usuário (cobrindo viable, warning e unviable)
-   - Pelo menos 2 simulações com share_token gerado (is_public=True)
-
-2. /backend/scripts/reset_dev.py:
-   DROP + recria todas as tabelas + roda seed_dev.py
-   Só executa se DATABASE_URL contiver 'localhost' ou 'dev' (proteção contra execução em produção)
-
-3. Fixtures Pytest em conftest.py:
-   - user_factory: cria usuário com parâmetros customizáveis
-   - simulation_factory: cria simulação com parameters padrão sobrescrevíveis
-   - authenticated_client: AsyncClient com Authorization header do usuário de teste
-
-4. Makefile targets:
-   - make seed: roda seed_dev.py
-   - make reset-db: roda reset_dev.py
-   - make shell: abre Python shell com contexto da app e sessão DB
-
-Escreva testes: seed não falha em banco limpo; seed é idempotente (rodar 2x não duplica dados); reset_dev falha se DATABASE_URL apontar para produção
+Adicione ao CI: rodar smoke_test.sh após cada deploy de staging e produção.
 ```
 
 ---
 
-### Prompt 48 — Checklist de Go-Live e Smoke Tests
+### Prompt 27 — Acessibilidade WCAG 2.1 AA
 
 ```
-No /backend e /frontend do SimulaRenda, crie o checklist automatizado de go-live:
+No SimulaRenda, audite e corrija a acessibilidade da UI NiceGUI.
 
-1. Script /scripts/pre_deploy_check.sh:
+NiceGUI usa Quasar Framework internamente. As correções são aplicadas via
+props de acessibilidade nos componentes Quasar/HTML customizado.
+
+1. Inputs:
+   Todo ui.number, ui.input, ui.select, ui.slider deve ter aria-label explícito
+   se o label visual não for suficiente para leitores de tela.
+   ui.slider: adicionar props :aria-valuemin, :aria-valuemax, :aria-valuenow,
+              :aria-label via .props()
+
+2. Notificações e alertas:
+   ui.notify: adicionar role='alert' para type='negative', role='status' para outros
+   (via app.add_body_html com CSS override ou JavaScript mínimo via ui.run_javascript)
+
+3. Modais:
+   ui.dialog: adicionar aria-modal='true' e aria-labelledby apontando para
+              o título do dialog (via .props('aria-modal="true"'))
+   Garantir que foco vai para o dialog ao abrir e retorna ao elemento disparador ao fechar
+
+4. Gráficos Plotly:
+   Envolver ui.plotly em div com role='img' e aria-label descritivo:
+     f"Gráfico de evolução patrimonial. Patrimônio cresce de R$ {pv} aos {current_age} anos
+       até R$ {projected} aos {retirement_age} anos."
+   Adicionar tabela de dados colapsável abaixo de cada gráfico:
+     ui.expansion("📋 Dados do gráfico (acessível)"):
+       ui.table com os mesmos dados do gráfico
+
+5. Contraste:
+   Verificar que todos os textos sobre fundo colorido têm contraste ≥ 4.5:1.
+   Em especial: badges de status (viable/warning/unviable) e texto sobre cards coloridos.
+   Ajustar cores se necessário.
+
+6. Navegação por teclado:
+   Verificar que todos os elementos interativos são alcançáveis via Tab.
+   Testar o formulário completo apenas com teclado (sem mouse).
+
+Execute axe-core via Playwright em cada página:
+  from playwright.sync_api import Page
+  def check_accessibility(page: Page, path: str):
+      page.goto(path)
+      violations = page.evaluate("""
+          () => new Promise(resolve => {
+              const s = document.createElement('script')
+              s.src = 'https://cdnjs.cloudflare.com/ajax/libs/axe-core/4.9.1/axe.min.js'
+              s.onload = () => axe.run().then(r => resolve(r.violations))
+              document.head.appendChild(s)
+          })
+      """)
+      return violations
+
+Nenhuma violation de nível 'critical' ou 'serious' pode estar presente em /.
+```
+
+---
+
+### Prompt 28 — Internacionalização (i18n Ready)
+
+```
+No SimulaRenda, prepare a base de internacionalização sem implementar
+múltiplos idiomas no MVP (pt-BR exclusivo).
+
+1. Crie /backend/app/i18n/pt_BR.py com TODAS as strings visíveis ao usuário:
+
+```python
+STRINGS = {
+    # Navegação
+    "nav.logo": "SimulaRenda",
+    "nav.my_simulations": "Minhas Simulações",
+    "nav.login": "Entrar",
+    "nav.register": "Cadastrar",
+    "nav.logout": "Sair",
+    # Formulário
+    "form.current_situation": "Situação Atual",
+    "form.current_patrimony": "Patrimônio atual investido",
+    "form.monthly_contribution": "Aporte mensal",
+    "form.current_age": "Idade atual",
+    "form.independence_goals": "Metas de Independência",
+    "form.desired_income": "Renda mensal desejada",
+    "form.retirement_age": "Idade para parar de trabalhar",
+    "form.life_expectancy": "Expectativa de vida",
+    # ... (todas as strings do projeto)
+    # Resultados
+    "results.required_patrimony": "Patrimônio Necessário",
+    "results.projected_patrimony": "Patrimônio Projetado",
+    "results.required_contribution": "Aporte Mensal Necessário",
+    "results.gap": "Diferença (Gap)",
+    "results.viable": "✅ Plano viável!...",
+    "results.warning": "⚠️ Plano com ajuste necessário...",
+    "results.unviable": "❌ Plano inviável...",
+    # Erros
+    "error.required_field": "Campo obrigatório",
+    "error.invalid_age": "Idade inválida",
+    # ...
+}
+
+def t(key: str, **kwargs) -> str:
+    text = STRINGS.get(key, key)
+    return text.format(**kwargs) if kwargs else text
+```
+
+2. Substitua TODAS as strings hardcoded nos componentes por t('chave').
+   Exemplos:
+     ui.label("Patrimônio Necessário") → ui.label(t("results.required_patrimony"))
+     ui.notify("Simulação salva!") → ui.notify(t("notify.simulation_saved"))
+
+3. Formatação de moeda e datas via locale:
+   Em app/i18n/formatters.py:
+     format_currency(value: Decimal) -> str  (R$ 1.234,56 ou R$ 1,5M)
+     format_age(age: int) -> str  (f"{age} anos")
+     format_date(dt: datetime) -> str  (ex: "2 jun. 2026")
+
+4. Script check_i18n.py:
+   Varre app/ui/ em busca de strings hardcoded em português dentro de ui.*()
+   Reporta como warning; falha no CI se count > 0
+
+Testes:
+- t('key_inexistente') retorna a própria chave (não lança exceção)
+- format_currency(Decimal('1500000')) retorna 'R$ 1,5M'
+- Todas as keys em STRINGS são usadas em pelo menos um componente (sem órfãs)
+- check_i18n.py retorna 0 warnings após a substituição
+```
+
+---
+
+### Prompt 29 — Perfil do Usuário
+
+```
+Em /backend/app/ui/pages/ do SimulaRenda, crie a página de perfil.
+
+@ui.page('/perfil'):
+  Redirecionar para '/entrar' se não autenticado.
+
+  Seção 1 — Dados Pessoais:
+    ui.input "Nome completo" pré-preenchido
+    ui.input "Email" readonly
+    ui.input "Data de nascimento" (type=date)
+    ui.button "Salvar" → PUT /api/v1/users/me
+    Ao salvar data de nascimento: atualizar idade atual no formulário principal
+    (calcular current_age = anos completos desde a data de nascimento)
+
+  Seção 2 — Segurança (apenas para usuários com senha — não OAuth):
+    ui.expansion("Alterar senha"):
+      ui.input "Senha atual" (type=password)
+      ui.input "Nova senha" (type=password, mínimo 8 chars)
+      ui.input "Confirmar nova senha"
+      ui.button "Alterar" → POST /api/v1/auth/change-password
+
+  Seção 3 — Suas Simulações:
+    Badge com contagem total
+    ui.link "Ver todas" → '/minhas-simulacoes'
+
+  Seção 4 — Zona de Perigo:
+    ui.expansion("⚠️ Excluir minha conta", color='negative'):
+      ui.label com aviso sobre exclusão permanente (30 dias de carência)
+      ui.input "Digite seu email para confirmar"
+      ui.button "Excluir conta permanentemente" (só habilitado quando email correto digitado)
+      → DELETE /api/v1/users/me → clearAuth → redirect para / com notify
+
+Adicione endpoint no backend:
+  PUT /api/v1/users/me → atualiza name e birth_date
+  DELETE /api/v1/users/me → soft delete (sets deleted_at = now())
+
+Testes E2E:
+- Edição de nome é salva (página recarregada mostra novo nome)
+- Exclusão com email incorreto mantém botão desabilitado
+- Exclusão com email correto realiza logout e redireciona
+```
+
+---
+
+### Prompt 30 — Checklist de Go-Live e Documentação Final
+
+```
+No SimulaRenda, crie os artefatos finais para o go-live.
+
+1. scripts/pre_deploy_check.sh:
    Executa e falha se qualquer item não passar:
-   □ Testes backend: pytest --tb=short (todos passando)
-   □ Cobertura backend: ≥ 80% (pytest-cov)
-   □ Testes frontend: vitest run (todos passando)
-   □ TypeScript: tsc --noEmit (sem erros de tipo)
-   □ ESLint: eslint src --max-warnings 0
-   □ Build frontend: vite build (sem erros, bundle < 200KB gzipped)
-   □ Variáveis de ambiente: verifica que todas as vars do .env.prod.example estão definidas
-   □ Migrações pendentes: alembic check (sem migrações não aplicadas)
+   □ pytest --cov=app --cov-fail-under=80
+   □ pytest tests/test_calculator.py --cov=app/services/calculator --cov-fail-under=100
+   □ ruff check app/ (sem erros)
+   □ mypy app/ (sem erros de tipo)
+   □ python scripts/check_i18n.py (sem strings hardcoded)
+   □ python -c "from app.main import app" (sem ImportError)
+   □ Verificar que todas as vars do .env.prod.example estão definidas no ambiente
+   □ alembic check (sem migrações pendentes)
 
-2. Script /scripts/smoke_test.sh BASE_URL:
-   Após deploy, executa:
-   □ GET $BASE_URL/ → 200
-   □ GET $BASE_URL/api/v1/health → 200 com status:healthy
-   □ POST $BASE_URL/api/v1/simulations/calculate com payload válido → 200 com required_patrimony > 0
-   □ POST $BASE_URL/api/v1/auth/login com credenciais inválidas → 401
-   □ GET $BASE_URL/api/v1/simulations sem token → 401
-   □ GET $BASE_URL/api/v1/simulations/shared/token-invalido → 404
+2. RUNBOOK.md na raiz:
+   ## Rollback
+   - docker-compose -f docker-compose.prod.yml pull backend
+   - docker tag simularenda_backend:previous simularenda_backend:latest
+   - docker-compose -f docker-compose.prod.yml up -d backend
 
-3. Crie RUNBOOK.md com:
-   - Procedimento de rollback (passos manuais + comando)
-   - Como verificar logs em produção
-   - Contatos de emergência
-   - SLOs: uptime 99.5%, cálculo p95 < 300ms, error rate < 0.1%
+   ## Verificar Logs em Produção
+   - docker-compose -f docker-compose.prod.yml logs -f backend --tail=100
 
-4. GitHub Actions job post-deploy que roda smoke_test.sh após cada deploy e abre issue automática se falhar.
+   ## SLOs
+   - Uptime: 99.5% mensal
+   - API P95: < 300ms
+   - Error rate: < 0.1%
+
+   ## Contatos de Emergência
+   [preencher]
+
+3. Atualize README.md com:
+   - Descrição do produto (2 parágrafos)
+   - Stack: Python 3.12 + FastAPI + NiceGUI + PostgreSQL + Redis
+   - Setup em 5 passos:
+       git clone ...
+       cp .env.example .env  # edite as variáveis
+       docker-compose up -d postgres redis
+       make install && make migrate && make seed
+       make dev  # acesse http://localhost:8000
+   - Link para CONTEXT.md ("Para agentes de IA e novos desenvolvedores")
+   - Link para o PRD
+
+4. GitHub Actions: job post-deploy que executa smoke_test.sh e abre issue
+   automaticamente se alguma verificação falhar.
+
+Confirmação final:
+  make ci-local  (deve passar 100%)
+  docker-compose up --build
+  scripts/smoke_test.sh http://localhost:8000
+  Todos os checks devem passar antes de marcar o projeto como pronto para produção.
 ```
 
 ---
@@ -1580,12 +1814,15 @@ No /backend e /frontend do SimulaRenda, crie o checklist automatizado de go-live
 
 | Fase | Prompts | Entregável Principal |
 |------|---------|---------------------|
-| **1 — Setup e Infraestrutura** | 01–08 | Monorepo configurado, backend FastAPI, modelos DB, schemas, engine de cálculo, autenticação, CRUD de API, frontend base |
-| **2 — Formulário de Simulação** | 09–18 | Todos os componentes de input, 5 seções do formulário, hook de cálculo em tempo real |
-| **3 — Resultados e Gráficos** | 19–28 | Cards de resultado, timeline de eventos, 2 gráficos interativos, export PDF, página de compartilhamento |
-| **4 — Histórico e Comparação** | 29–36 | Lista de simulações, comparação side-by-side, offline localStorage, autenticação completa, SEO |
-| **5 — Qualidade e Deploy** | 37–48 | E2E Playwright, segurança, performance, Docker, CI/CD, monitoramento, acessibilidade, go-live |
+| **Reversão** | R01–R04 | Remove React/npm, adiciona NiceGUI, atualiza infra |
+| **1 — Engine** | 01–06 | SimulationState, calculator.py (100% cobertura), auth, CRUD API, seed |
+| **2 — Formulário** | 07–14 | Layout base, 5 seções do formulário, integração reativa, resultados, gráficos |
+| **3 — Autenticação** | 15–21 | Login/cadastro, salvar simulação, histórico, comparação, detalhe, compartilhado, PDF |
+| **4 — Qualidade** | 22–30 | E2E Playwright, segurança, monitoramento, CI/CD, Docker prod, acessibilidade, i18n, go-live |
+
+**Nota:** Os prompts 02, 03 e 04 originais (modelos SQLAlchemy, migrações Alembic e schemas Pydantic)  
+**continuam válidos e já foram executados.** Não é necessário refazê-los.
 
 ---
 
-*SimulaRenda — Prompts para ChatGPT Codex · v1.0 · 01/06/2026*
+*SimulaRenda — Prompts para ChatGPT Codex · v2.0 (NiceGUI) · 01/06/2026*

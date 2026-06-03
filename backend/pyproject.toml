@@ -22,6 +22,15 @@ dependencies = [
 test = [
   "pytest",
   "pytest-asyncio",
+  "pytest-cov",
+  "httpx",
+]
+dev = [
+  "pytest",
+  "pytest-asyncio",
+  "pytest-cov",
+  "ruff",
+  "mypy",
   "httpx",
 ]
 

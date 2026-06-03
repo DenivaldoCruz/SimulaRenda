@@ -1,22 +1,19 @@
 .PHONY: install dev test lint build migrate
 
 install:
-	cd frontend && python -m pip install nicegui httpx pytest
-	cd backend && python -m pip install -e ".[test]"
+	cd backend && python -m pip install -e ".[dev]"
 
 dev:
-	docker compose up --build
+	cd backend && uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 test:
-	cd frontend && pytest
-	cd backend && pytest
+	cd backend && pytest --cov=app --cov-report=term-missing
 
 lint:
-	cd frontend && python -m compileall app
-	cd backend && python -m compileall app
+	cd backend && ruff check app/ && mypy app/
 
 build:
-	docker compose build
+	cd backend && python -m compileall app
 
 migrate:
 	cd backend && alembic upgrade head

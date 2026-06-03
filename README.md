@@ -2,22 +2,20 @@
 
 SimulaRenda é uma aplicação web de planejamento de independência financeira para o mercado brasileiro. O projeto combina uma interface Python com NiceGUI e uma API FastAPI para calcular metas de patrimônio, aportes necessários e fases de renda, com atenção especial ao gap previdenciário entre a parada de trabalho e o início dos benefícios previdenciários.
 
-## Estrutura do monorepo
+## Estrutura do projeto
 
 ```text
 .
-├── backend/   # FastAPI + Python 3.12
-├── frontend/  # NiceGUI + Python 3.12
-├── shared/    # Documentação de contratos compartilhados
-└── docker-compose.yml
+├── backend/            # FastAPI + NiceGUI + Python 3.12
+├── docker-compose.yml  # PostgreSQL, Redis e aplicação Python
+└── README.md
 ```
 
 ## Requisitos
 
-- Docker e Docker Compose
 - Python 3.12+
-
-Não é necessário Node.js nem npm para desenvolver ou executar o projeto.
+- pip
+- Docker e Docker Compose para executar PostgreSQL e Redis em desenvolvimento
 
 ## Setup local
 
@@ -29,28 +27,36 @@ Não é necessário Node.js nem npm para desenvolver ou executar o projeto.
 
 2. Ajuste `SECRET_KEY`, credenciais OAuth e origens de CORS no `.env`.
 
-3. Instale as dependências locais:
+3. Instale as dependências Python:
 
    ```bash
    make install
    ```
 
-4. Suba o ambiente de desenvolvimento:
+4. Suba os serviços de apoio em outro terminal, se necessário:
+
+   ```bash
+   docker compose up -d postgres redis
+   ```
+
+5. Inicie a aplicação:
 
    ```bash
    make dev
    ```
 
-A interface NiceGUI ficará disponível em `http://localhost:5173` e a API em `http://localhost:8000`.
+A interface NiceGUI e a API FastAPI ficam disponíveis no mesmo processo em `http://localhost:8000`.
+
+> Frontend construído com NiceGUI — não há build step separado.
 
 ## Comandos úteis
 
 ```bash
-make install  # instala dependências Python do frontend e backend
-make dev      # sobe postgres, redis, backend e frontend com Docker Compose
-make test     # executa testes Python do frontend e backend
-make lint     # compila módulos Python para validação estática inicial
-make build    # gera imagens Docker
+make install  # instala dependências Python de desenvolvimento
+make dev      # inicia FastAPI e NiceGUI em :8000
+make test     # executa testes com cobertura
+make lint     # executa ruff e mypy
+make build    # valida a compilação dos módulos Python
 make migrate  # executa migrações Alembic
 ```
 
@@ -58,7 +64,6 @@ make migrate  # executa migrações Alembic
 
 O `docker-compose.yml` define os serviços de desenvolvimento:
 
-- `postgres`: PostgreSQL 16
-- `redis`: Redis 7
-- `backend`: API FastAPI em `:8000`
-- `frontend`: interface NiceGUI em `:5173`
+- `postgres`: PostgreSQL 16 em `:5432`
+- `redis`: Redis 7 em `:6379`
+- `backend`: FastAPI + NiceGUI em `:8000`

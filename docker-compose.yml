@@ -45,18 +45,6 @@ services:
       redis:
         condition: service_healthy
 
-  frontend:
-    build:
-      context: ./frontend
-    environment:
-      BACKEND_API_URL: http://backend:8000/api/v1
-    ports:
-      - "5173:5173"
-    volumes:
-      - ./frontend:/app
-    depends_on:
-      - backend
-
 volumes:
   postgres_data:
   redis_data:

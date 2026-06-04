@@ -5,7 +5,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import decode_token
+from app.core.security import ACCESS_TOKEN_TYPE, decode_token
 from app.db.session import get_session
 from app.models.user import User
 
@@ -25,11 +25,17 @@ async def get_current_user(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Não autenticado")
     try:
         payload = decode_token(credentials.credentials)
+        if payload.get("type") != ACCESS_TOKEN_TYPE:
+            raise ValueError
         user_id = UUID(str(payload.get("sub")))
     except (TypeError, ValueError):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido") from None
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido"
+        ) from None
 
     user = await db.get(User, user_id)
     if user is None or user.deleted_at is not None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuário não encontrado")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuário não encontrado"
+        )
     return user

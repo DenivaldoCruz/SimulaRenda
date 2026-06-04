@@ -128,6 +128,16 @@ def _private_pension_end_age(params: SimulationParameters) -> int | None:
     return params.private_pension.start_age + params.private_pension.term_years
 
 
+def _is_lump_sum_private_pension(params: SimulationParameters) -> bool:
+    return params.private_pension.enabled and params.private_pension.modality == "lump_sum"
+
+
+def _lump_sum_private_pension_at_age(params: SimulationParameters, age: int) -> Decimal:
+    if _is_lump_sum_private_pension(params) and params.private_pension.start_age == age:
+        return params.private_pension.monthly_amount
+    return ZERO_MONEY
+
+
 def _is_public_pension_active(params: SimulationParameters, age: int) -> bool:
     return (
         params.public_pension.enabled
@@ -138,6 +148,8 @@ def _is_public_pension_active(params: SimulationParameters, age: int) -> bool:
 
 def _is_private_pension_active(params: SimulationParameters, age: int) -> bool:
     if not params.private_pension.enabled or params.private_pension.start_age is None:
+        return False
+    if params.private_pension.modality == "lump_sum":
         return False
     if age < params.private_pension.start_age:
         return False
@@ -218,6 +230,7 @@ def simulate_projection(
     """
     patrimony = params.current_patrimony
     monthly_rate = params.annual_real_return / MONTHS_IN_YEAR
+    paid_lump_sum_ages: set[int] = set()
     projection_series = [
         ProjectionPoint(
             age=params.current_age,
@@ -230,6 +243,10 @@ def simulate_projection(
         for _month in range(12):
             patrimony = patrimony * (ONE + monthly_rate) + params.monthly_contribution
         patrimony = max(Decimal(0), patrimony)
+        lump_sum = _lump_sum_private_pension_at_age(params, age)
+        if lump_sum > 0:
+            patrimony += lump_sum
+            paid_lump_sum_ages.add(age)
         projection_series.append(
             ProjectionPoint(age=age, patrimony=quantize_money(patrimony), monthly_income=ZERO_MONEY)
         )
@@ -247,6 +264,10 @@ def simulate_projection(
                     patrimony_exhausted = True
                     exhaustion_age = age
         next_age = age + 1
+        lump_sum = _lump_sum_private_pension_at_age(params, next_age)
+        if lump_sum > 0 and next_age not in paid_lump_sum_ages:
+            patrimony += lump_sum
+            paid_lump_sum_ages.add(next_age)
         next_age_income = max(
             params.desired_monthly_income,
             _benefit_amount_at_age(params, next_age),

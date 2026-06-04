@@ -344,6 +344,230 @@ def test_run_full_simulation_returns_unviable_and_exhaustion_for_fifteen_year_ga
     assert result.feasibility_status == "unviable"
 
 
+def test_one_year_accumulation_uses_exactly_twelve_months() -> None:
+    params = make_params(
+        current_age=54,
+        retirement_age=55,
+        current_patrimony=Decimal("10000.00"),
+        monthly_contribution=Decimal("1000.00"),
+        annual_real_return=Decimal("0.12"),
+        public_pension=PublicPension(enabled=False),
+        private_pension=PrivatePension(enabled=False),
+    )
+
+    result = run_full_simulation(params)
+
+    expected = calculate_future_value(
+        pv=Decimal("10000.00"),
+        pmt=Decimal("1000.00"),
+        annual_rate=Decimal("0.12"),
+        months=12,
+    )
+    assert result.projected_patrimony == expected == Decimal("23950.75")
+    assert result.projection_series[1].age == 55
+    assert result.projection_series[1].patrimony == expected
+
+
+def test_one_year_life_expectancy_stops_projection_at_life_expectancy() -> None:
+    params = make_params(
+        current_age=54,
+        retirement_age=55,
+        life_expectancy=56,
+        annual_real_return=Decimal("0"),
+        public_pension=PublicPension(enabled=False),
+        private_pension=PrivatePension(enabled=False),
+    )
+
+    result = run_full_simulation(params)
+
+    assert [(phase.from_age, phase.to_age) for phase in result.phases] == [(55, 56)]
+    assert [point.age for point in result.projection_series] == [54, 55, 56]
+
+
+def test_zero_patrimony_and_contribution_require_target_contribution() -> None:
+    params = make_params(
+        current_age=54,
+        retirement_age=55,
+        current_patrimony=Decimal("0.00"),
+        monthly_contribution=Decimal("0.00"),
+        annual_real_return=Decimal("0"),
+        public_pension=PublicPension(enabled=False),
+        private_pension=PrivatePension(enabled=False),
+    )
+
+    result = run_full_simulation(params)
+
+    assert result.projected_patrimony == Decimal("0.00")
+    assert calculate_required_contribution(
+        target=Decimal("12345.67"),
+        pv=Decimal("0.00"),
+        annual_rate=Decimal("0"),
+        months=1,
+    ) == Decimal("12345.67")
+
+
+def test_maximum_safe_withdrawal_rate_reduces_required_patrimony_and_can_be_viable() -> None:
+    base = make_params(
+        current_age=54,
+        retirement_age=55,
+        current_patrimony=Decimal("1000000.00"),
+        monthly_contribution=Decimal("0.00"),
+        desired_monthly_income=Decimal("8000.00"),
+        annual_real_return=Decimal("0"),
+        public_pension=PublicPension(enabled=False),
+        private_pension=PrivatePension(enabled=False),
+    )
+    aggressive_withdrawal = make_params(
+        current_age=54,
+        retirement_age=55,
+        current_patrimony=Decimal("1000000.00"),
+        monthly_contribution=Decimal("0.00"),
+        desired_monthly_income=Decimal("8000.00"),
+        annual_real_return=Decimal("0"),
+        safe_withdrawal_rate=Decimal("0.10"),
+        public_pension=PublicPension(enabled=False),
+        private_pension=PrivatePension(enabled=False),
+    )
+
+    conservative_result = run_full_simulation(base)
+    aggressive_result = run_full_simulation(aggressive_withdrawal)
+
+    assert aggressive_result.required_patrimony == Decimal("960000.00")
+    assert aggressive_result.required_patrimony < conservative_result.required_patrimony
+    assert aggressive_result.feasibility_status == "viable"
+
+
+def test_lump_sum_private_pension_adds_once_to_patrimony_without_recurring_income() -> None:
+    params = make_params(
+        current_age=58,
+        current_patrimony=Decimal("0.00"),
+        monthly_contribution=Decimal("0.00"),
+        desired_monthly_income=Decimal("1000.00"),
+        retirement_age=59,
+        life_expectancy=61,
+        annual_real_return=Decimal("0"),
+        public_pension=PublicPension(enabled=False),
+        private_pension=PrivatePension(
+            enabled=True,
+            monthly_amount=Decimal("12000.00"),
+            start_age=60,
+            modality="lump_sum",
+        ),
+    )
+
+    result = run_full_simulation(params)
+
+    assert all("private_pension" not in phase.sources for phase in result.phases)
+    assert all(
+        phase.monthly_withdrawal_from_patrimony == Decimal("1000.00")
+        for phase in result.phases
+    )
+    assert [(point.age, point.patrimony) for point in result.projection_series] == [
+        (58, Decimal("0.00")),
+        (59, Decimal("0.00")),
+        (60, Decimal("12000.00")),
+        (61, Decimal("0.00")),
+    ]
+
+
+def test_fixed_term_private_pension_sources_disappear_after_term() -> None:
+    params = make_params(
+        desired_monthly_income=Decimal("6000.00"),
+        public_pension=PublicPension(enabled=False),
+        private_pension=PrivatePension(
+            enabled=True,
+            monthly_amount=Decimal("2500.00"),
+            start_age=60,
+            modality="fixed_term",
+            term_years=10,
+        ),
+    )
+
+    phases = simulate_phases(params)
+
+    assert [(phase.from_age, phase.to_age, phase.sources) for phase in phases] == [
+        (55, 60, ["patrimony"]),
+        (60, 70, ["patrimony", "private_pension"]),
+        (70, 90, ["patrimony"]),
+    ]
+
+
+def test_pensions_with_same_start_age_share_one_phase() -> None:
+    params = make_params(
+        public_pension=PublicPension(
+            enabled=True,
+            monthly_amount=Decimal("2500.00"),
+            start_age=60,
+        ),
+        private_pension=PrivatePension(
+            enabled=True,
+            monthly_amount=Decimal("3000.00"),
+            start_age=60,
+        ),
+    )
+
+    phases = simulate_phases(params)
+
+    assert [(phase.from_age, phase.to_age) for phase in phases] == [(55, 60), (60, 90)]
+    assert phases[1].sources == ["patrimony", "private_pension", "public_pension"]
+    assert phases[1].monthly_withdrawal_from_patrimony == Decimal("2500.00")
+
+
+def test_pensions_above_desired_income_clamp_withdrawal_to_zero_and_patrimony_grows() -> None:
+    params = make_params(
+        current_age=54,
+        current_patrimony=Decimal("100000.00"),
+        monthly_contribution=Decimal("0.00"),
+        desired_monthly_income=Decimal("1000.00"),
+        retirement_age=55,
+        life_expectancy=57,
+        annual_real_return=Decimal("0.12"),
+        public_pension=PublicPension(
+            enabled=True,
+            monthly_amount=Decimal("1500.00"),
+            start_age=55,
+        ),
+        private_pension=PrivatePension(
+            enabled=True,
+            monthly_amount=Decimal("1500.00"),
+            start_age=55,
+        ),
+    )
+
+    result = run_full_simulation(params)
+
+    assert len(result.phases) == 1
+    assert result.phases[0].monthly_withdrawal_from_patrimony == Decimal("0.00")
+    assert result.phases[0].sources == ["private_pension", "public_pension"]
+    assert result.projection_series[2].patrimony > result.projection_series[1].patrimony
+    assert result.projection_series[3].patrimony > result.projection_series[2].patrimony
+
+
+def test_future_value_uses_decimal_precision_and_quantizes_money() -> None:
+    decimal_result = calculate_future_value(
+        pv=Decimal("987654321098765.43"),
+        pmt=Decimal("123456789.12"),
+        annual_rate=Decimal("0.073333"),
+        months=480,
+    )
+    float_pv = 987654321098765.43
+    float_pmt = 123456789.12
+    float_monthly_rate = 0.073333 / 12
+    float_factor = (1 + float_monthly_rate) ** 480
+    float_result = (
+        float_pv * float_factor
+        + float_pmt * ((float_factor - 1) / float_monthly_rate)
+    )
+
+    assert decimal_result.as_tuple().exponent == -2
+    assert abs(decimal_result - Decimal(str(float_result))) > Decimal("0.01")
+
+
+def test_schema_validation_rejects_safe_withdrawal_rate_above_maximum() -> None:
+    with pytest.raises(ValidationError):
+        make_params(safe_withdrawal_rate=Decimal("0.100001"))
+
+
 def test_schema_validation_makes_safe_withdrawal_rate_division_by_zero_impossible() -> None:
     with pytest.raises(ValidationError):
         make_params(safe_withdrawal_rate=Decimal("0"))

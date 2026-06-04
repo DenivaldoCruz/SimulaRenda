@@ -20,7 +20,7 @@ class PrivatePension(BaseModel):
     enabled: bool = False
     monthly_amount: Decimal = Decimal("0.00")
     start_age: int | None = None
-    modality: Literal["lifetime", "fixed_term"] = "lifetime"
+    modality: Literal["lifetime", "fixed_term", "lump_sum"] = "lifetime"
     term_years: int | None = None
     amount_in_today_reais: bool = True
 
@@ -36,7 +36,7 @@ class SimulationParameters(BaseModel):
     life_expectancy: int = Field(gt=0)
     inflation_rate: Decimal = Field(ge=0)
     annual_real_return: Decimal
-    safe_withdrawal_rate: Decimal = Field(gt=0)
+    safe_withdrawal_rate: Decimal = Field(gt=0, le=Decimal("0.10"))
     public_pension: PublicPension = Field(default_factory=PublicPension)
     private_pension: PrivatePension = Field(default_factory=PrivatePension)
 

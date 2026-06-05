@@ -2,7 +2,7 @@ from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
 
 class PublicPension(BaseModel):
@@ -50,12 +50,16 @@ class SimulationParameters(BaseModel):
             self.public_pension.start_age is None
             or self.public_pension.start_age < self.retirement_age
         ):
-            raise ValueError("public_pension.start_age must be greater than or equal to retirement_age")
+            raise ValueError(
+                "public_pension.start_age must be greater than or equal to retirement_age"
+            )
         if self.private_pension.enabled and (
             self.private_pension.start_age is None
             or self.private_pension.start_age < self.retirement_age
         ):
-            raise ValueError("private_pension.start_age must be greater than or equal to retirement_age")
+            raise ValueError(
+                "private_pension.start_age must be greater than or equal to retirement_age"
+            )
         return self
 
 
@@ -86,8 +90,35 @@ class SimulationResults(BaseModel):
 
 
 class SimulationCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str = "Simulação sem título"
     parameters: SimulationParameters
+
+    @computed_field
+    @property
+    def normalized_name(self) -> str:
+        return self.name.strip() or "Simulação sem título"
+
+
+class SimulationUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = None
+    parameters: SimulationParameters | None = None
+
+    @computed_field
+    @property
+    def normalized_name(self) -> str:
+        if self.name is None:
+            return "Simulação sem título"
+        return self.name.strip() or "Simulação sem título"
+
+
+class SimulationShareRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enable: bool
 
 
 class SimulationResponse(BaseModel):
@@ -100,3 +131,10 @@ class SimulationResponse(BaseModel):
     is_public: bool
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class SimulationListResponse(BaseModel):
+    items: list[SimulationResponse]
+    page: int
+    size: int
+    total: int

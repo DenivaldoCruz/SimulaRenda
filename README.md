@@ -34,6 +34,7 @@ SimulaRenda é uma aplicação web de planejamento de independência financeira 
    ```
 
 4. Suba os serviços de apoio em outro terminal, se necessário:
+https://docker-for-mac.en.uptodown.com/mac/download/3734812
 
    ```bash
    docker compose up -d postgres redis

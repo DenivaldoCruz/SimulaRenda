@@ -1,13 +1,13 @@
 from functools import lru_cache
-
-from pydantic import Field, field_validator, model_validator
+import sys
+from pydantic import Field, field_validator, model_validator, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables and .env."""
 
-    DATABASE_URL: str
+    DATABASE_URL: str = Field(min_length=1)
     REDIS_URL: str
     SECRET_KEY: str = Field(min_length=32)
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
@@ -49,7 +49,31 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    try:
+        return Settings()
+    except ValidationError as e:
+        # Provide a clearer, actionable message when required env vars are missing.
+        missing = []
+        for err in e.errors():
+            if err.get("type") == "missing":
+                loc = ".".join(str(x) for x in err.get("loc", []))
+                missing.append(loc)
+
+        if missing:
+            msg = (
+                "Missing required environment variables for Settings: "
+                f"{', '.join(missing)}.\n"
+                "Please create a `.env` file from `.env.example` or set the variables in your environment.\n"
+                "For example:\n"
+                "  cp .env.example .env\n"
+                "  # generate a SECRET_KEY (minimum 32 chars):\n"
+                "  python -c \"import secrets; print(secrets.token_hex(32))\"\n"
+            )
+        else:
+            msg = f"Invalid settings: {e}"
+
+        print(msg, file=sys.stderr)
+        raise SystemExit(1) from e
 
 
 settings = get_settings()

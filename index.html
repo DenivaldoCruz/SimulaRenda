@@ -1,0 +1,151 @@
+<!doctype html>
+<html>
+  <head>
+    <title>SimulaRenda</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      id="nicegui-color-scheme"
+      name="color-scheme"
+      content="light"
+    />
+    <link href="data:image/svg+xml,%0A%20%20%20%20%20%20%20%20%3Csvg%20viewBox%3D%220%200%20128%20128%22%20width%3D%22128%22%20height%3D%22128%22%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20%3E%0A%20%20%20%20%20%20%20%20%20%20%20%20%3Cstyle%3E%0A%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%40supports%20%28-moz-appearance%3Anone%29%20%7B%0A%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20text%20%7B%0A%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20font-size%3A%20100px%3B%0A%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20transform%3A%20translateY%280.1em%29%3B%0A%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%7D%0A%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%7D%0A%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20text%20%7B%0A%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20font-family%3A%20Arial%2C%20sans-serif%3B%0A%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%7D%0A%20%20%20%20%20%20%20%20%20%20%20%20%3C/style%3E%0A%20%20%20%20%20%20%20%20%20%20%20%20%3Ctext%20y%3D%22.9em%22%20font-size%3D%22128%22%20font-family%3D%22Georgia%2C%20sans-serif%22%3E%F0%9F%92%B0%3C/text%3E%0A%20%20%20%20%20%20%20%20%3C/svg%3E%0A%20%20%20%20" rel="shortcut icon" />
+    <style>
+      @layer theme, base, quasar, nicegui, components, utilities, overrides, quasar_importants;
+      @import url("/_nicegui/3.12.1/static/fonts.css") layer(base);
+      
+        @import url("/_nicegui/3.12.1/static/quasar.unimportant.prod.css") layer(quasar);
+        @import url("/_nicegui/3.12.1/static/quasar.important.prod.css") layer(quasar_importants);
+      
+      @import url("/_nicegui/3.12.1/static/nicegui.css") layer(nicegui);
+      @layer quasar {
+        blockquote, dd, dl, figure, h1, h2, h3, h4, h5, h6, hr, p, pre {
+          margin: revert-layer; /* HACK: revert Quasar's margin styles */
+        }
+      }
+      @layer overrides {
+        .rotate-45, .rotate-90, .rotate-135, .rotate-180, .rotate-225, .rotate-270, .rotate-315 {
+  rotate: 0deg;
+}
+        .column.inline, .flex.inline, .row.inline {
+          display: inline-flex;  /* HACK: re-apply Quasar's inline styles to override Tailwind */
+        }
+        .nicegui-dialog-open,
+        .nicegui-select-popup-open,
+        .nicegui-table-fullscreen {
+          scroll-behavior: auto !important; /* HACK: avoid smooth-scrolling when dialogs or select popups close */
+        }
+      }
+    </style>
+    <script type="importmap">
+      {"imports": {"vue":"/_nicegui/3.12.1/static/vue.esm-browser.prod.js","sass":"/_nicegui/3.12.1/static/sass.default.js","immutable":"/_nicegui/3.12.1/static/immutable.es.js","dompurify":"/_nicegui/3.12.1/static/dompurify.mjs","nicegui-leaflet":"/_nicegui/3.12.1/esm/31ec64a952f34fe7fc1e152a2603c3a4/index.js","nicegui-leaflet/":"/_nicegui/3.12.1/esm/31ec64a952f34fe7fc1e152a2603c3a4/","nicegui-plotly":"/_nicegui/3.12.1/esm/b3e3af64c1dad3acae74ed410e847b8b/index.js","nicegui-plotly/":"/_nicegui/3.12.1/esm/b3e3af64c1dad3acae74ed410e847b8b/","nicegui-codemirror":"/_nicegui/3.12.1/esm/6f5da6093d7556bfbacd976f04acea5b/index.js","nicegui-codemirror/":"/_nicegui/3.12.1/esm/6f5da6093d7556bfbacd976f04acea5b/","nicegui-json-editor":"/_nicegui/3.12.1/esm/df83fe8c55810df849f176be2b6fc64a/index.js","nicegui-json-editor/":"/_nicegui/3.12.1/esm/df83fe8c55810df849f176be2b6fc64a/","nicegui-aggrid":"/_nicegui/3.12.1/esm/a3e89d204a8a89ac618ef7a79cd7dd13/index.js","nicegui-aggrid/":"/_nicegui/3.12.1/esm/a3e89d204a8a89ac618ef7a79cd7dd13/","nicegui-echart":"/_nicegui/3.12.1/esm/412a48f702e3281187f417a532f21f96/index.js","nicegui-echart/":"/_nicegui/3.12.1/esm/412a48f702e3281187f417a532f21f96/","nicegui-scene":"/_nicegui/3.12.1/esm/451aaf640d3a1ab8dd39fe0e0d2ea627/index.js","nicegui-scene/":"/_nicegui/3.12.1/esm/451aaf640d3a1ab8dd39fe0e0d2ea627/","nicegui-joystick":"/_nicegui/3.12.1/esm/1295a4ab383322c53184fef0e1daac31/index.js","nicegui-joystick/":"/_nicegui/3.12.1/esm/1295a4ab383322c53184fef0e1daac31/","nicegui-xterm":"/_nicegui/3.12.1/esm/25bb317419b22b0a300ea0a77399b573/index.js","nicegui-xterm/":"/_nicegui/3.12.1/esm/25bb317419b22b0a300ea0a77399b573/","nicegui-mermaid":"/_nicegui/3.12.1/esm/bbc26fcf94cd93c7013d46a3aca6994d/index.js","nicegui-mermaid/":"/_nicegui/3.12.1/esm/bbc26fcf94cd93c7013d46a3aca6994d/"}}
+    </script>
+    <script>
+      addStyle = (c) => document.head.append(Object.assign(document.createElement("style"), { textContent: c }));
+    </script>
+    
+    <!-- prevent Prettier from removing this line -->
+    
+    <link rel="modulepreload" href="/_nicegui/3.12.1/static/vue.esm-browser.prod.js" />
+    
+    <!-- prevent Prettier from removing this line -->
+    
+    <style type="text/tailwindcss">
+      @custom-variant dark (&:where(body.body--dark, body.body--dark *));
+    </style>
+    
+    <!-- prevent Prettier from removing this line -->
+    
+  </head>
+  <body>
+    <script defer src="/_nicegui/3.12.1/static/socket.io.min.js"></script>
+    
+    <script defer src="/_nicegui/3.12.1/static/tailwindcss.min.js"></script>
+    
+    <script type="module">
+      import * as Vue from "vue";
+      globalThis.Vue = Vue;
+      document.getElementById("esm-fallback")?.remove();
+    </script>
+    
+    <script defer src="/_nicegui/3.12.1/static/quasar.umd.prod.js"></script>
+    
+    <script defer src="/_nicegui/3.12.1/static/nicegui.js"></script>
+
+    <script defer src="/_nicegui/3.12.1/static/lang/en-US.umd.prod.js"></script>
+    <style></style>
+
+
+
+    <style>
+      #esm-fallback {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+        height: 100vh;
+        font-family: sans-serif;
+        color: #888;
+        opacity: 0;
+        animation: esm-fallback-reveal 0s 1s forwards;
+      }
+      @keyframes esm-fallback-reveal {
+        to {
+          opacity: 1;
+        }
+      }
+      #esm-fallback ~ * {
+        display: none;
+      }
+    </style>
+    <div id="esm-fallback">Your browser does not support ES modules.<br />Please use a modern browser.</div>
+    <div id="app" ></div>
+    <div id="nicegui-keep-alive-cache" style="display: none" aria-hidden="true"></div>
+    <div id="popup" class="nicegui-error-popup" aria-hidden="true">
+      <span>Connection lost.</span>
+      <span>Trying to reconnect...</span>
+    </div>
+    <div id="too_long_message_popup" class="nicegui-error-popup" aria-hidden="true">
+      <span>Message too long</span>
+      <span>The message is too large for WebSocket transmission.</span>
+    </div>
+    <script type="module">
+      // Load DOMPurify for HTML sanitization
+      // NOTE: Always use DOMPurify instead of native setHTML because native setHTML strips class attributes.
+      import DOMPurify from "dompurify";
+      Element.prototype.setHTML = function (html) {
+        this.innerHTML = DOMPurify.sanitize(html);
+      };
+
+      const app = createApp(parseElements(String.raw`{"0":{"tag":"q-layout","class":["nicegui-layout"],"props":{"view":"hhh lpr fff"},"children":[1],"events":[{"listener_id":"624e539e-eaeb-4f0e-859d-0c1a7ca7eab6","type":"sub_pages_open","specials":[],"modifiers":[],"keys":[],"args":null,"throttle":0.0,"leading_events":true,"trailing_events":true,"js_handler":null},{"listener_id":"fafd9b0c-8eba-4da6-a2e5-0b370319b961","type":"sub_pages_navigate","specials":[],"modifiers":[],"keys":[],"args":null,"throttle":0.0,"leading_events":true,"trailing_events":true,"js_handler":null}]},"1":{"tag":"q-page-container","children":[2]},"2":{"tag":"q-page","children":[3]},"3":{"tag":"div","class":["nicegui-content"]}}`), {
+        version: "3.12.1",
+        prefix: "",
+        query: {'client_id': 'ecb53e43-3828-410b-bff3-1cc6d7e95061', 'next_message_id': 0, 'implicit_handshake': True},
+        extraHeaders: {},
+        transports: ['websocket', 'polling'],
+      });
+      const dark = False;
+      const language = "en-US";
+      const vue_config = {"brand":{"primary":"#5898d4","secondary":"#26a69a","accent":"#9c27b0","dark":"#1d1d1d","dark-page":"#121212","positive":"#21ba45","negative":"#c10015","info":"#31ccec","warning":"#f2c037"},"loadingBar":{"color":"primary","skipHijack":false}};
+      
+        app.use(Quasar, {config: vue_config});
+        applyColors(vue_config.brand);
+        Quasar.lang.set(Quasar.lang[language.replace('-', '')]);
+        darkSetter = (dark) => Quasar.Dark.set(dark === None ? "auto" : dark);
+        setDark(dark);
+    
+
+      
+      
+
+      app.mount("#app");
+
+      // Scroll to fragment after Vue mounts (browser's native scroll may have failed if element wasn't ready)
+      if (window.location.hash) {
+        Vue.nextTick(() => {
+          const fragment = window.location.hash.substring(1);
+          (document.getElementById(fragment) || document.querySelector(`a[name="${fragment}"]`))?.scrollIntoView();
+        });
+      }
+    </script>
+  </body>
+</html>
